@@ -1,0 +1,24 @@
+{
+  "name": "xmemory",
+  "version": "1.0.0",
+  "description": "xmemory",
+  "keywords": [ "xmemory" ],
+  "homepage": "https://github.com/xmemory-ai/xmemory-npm",
+  "bugs": {
+    "url": "https://github.com/xmemory-ai/xmemory-npm/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xmemory-ai/xmemory-npm.git"
+  },
+  "license": "MIT",
+  "author": "Dima Korolev",
+  "type": "commonjs",
+  "main": "index.js",
+  "bin": {
+    "xmemory": "cli.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
