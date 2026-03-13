@@ -188,7 +188,7 @@ export class XmemoryClient {
     const iid = this.requireInstanceId("writeAsync");
     const timeoutMs =
       options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
-    const body: Record<string, unknown> = {
+    const body: Record<string, unknown> = {a lot
       instance_id: iid,
       text,
       extraction_logic: options?.extractionLogic ?? "deep",
