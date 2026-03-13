@@ -19,10 +19,12 @@ export interface CreateInstanceResponse {
   error_message?: string | null;
 }
 
+export type ExtractionLogic = "fast" | "regular" | "deep";
+
 export interface WriteRequest {
   instance_id: string;
   text: string;
-  extraction_logic?: "fast" | "regular" | "deep";
+  extraction_logic?: ExtractionLogic;
 }
 
 export interface WriteResponse {
@@ -44,5 +46,26 @@ export interface ReaderResult {
 export interface ReadResponse {
   status: "ok" | "error";
   reader_result?: ReaderResult | null;
+  error_message?: string | null;
+}
+
+export interface AsyncWriteResponse {
+  status: "ok" | "error";
+  write_id?: string | null;
+  error_message?: string | null;
+}
+
+export type WriteQueueStatus = "queued" | "processing" | "completed" | "failed" | "not_found";
+
+export interface WriteStatusRequest {
+  write_id: string;
+}
+
+export interface WriteStatusResponse {
+  status: "ok" | "error";
+  write_id: string;
+  write_status: WriteQueueStatus;
+  error_detail?: string | null;
+  completed_at?: string | null;
   error_message?: string | null;
 }

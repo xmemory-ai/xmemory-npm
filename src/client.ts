@@ -3,14 +3,27 @@
  */
 
 import type {
+  AsyncWriteResponse,
   CreateInstanceResponse,
+  ExtractionLogic,
   ReadResponse,
   SchemaTypeValue,
   WriteResponse,
+  WriteStatusResponse,
 } from "./types.js";
 
 export { SchemaType } from "./types.js";
-export type { SchemaTypeValue, CreateInstanceResponse, WriteResponse, ReadResponse, ReaderResult } from "./types.js";
+export type {
+  AsyncWriteResponse,
+  CreateInstanceResponse,
+  ExtractionLogic,
+  ReadResponse,
+  ReaderResult,
+  SchemaTypeValue,
+  WriteQueueStatus,
+  WriteResponse,
+  WriteStatusResponse,
+} from "./types.js";
 
 const DEFAULT_BASE_URL = "http://0.0.0.0:8000";
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -154,7 +167,7 @@ export class XmemoryClient {
     return response.status === "ok";
   }
 
-  async write(text: string, options?: { timeout?: number }): Promise<WriteResponse> {
+  async write(text: string, options?: { timeout?: number; extractionLogic?: ExtractionLogic }): Promise<WriteResponse> {
     const iid = this.requireInstanceId("write");
     const timeoutMs =
       options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
@@ -164,8 +177,41 @@ export class XmemoryClient {
       {
         instance_id: iid,
         text,
-        extraction_logic: "deep",
+        extraction_logic: options?.extractionLogic ?? "deep",
       },
+      this.token,
+      timeoutMs
+    );
+  }
+
+  async writeAsync(text: string, options?: { timeout?: number; extractionLogic?: ExtractionLogic; extractWriteId?: string }): Promise<AsyncWriteResponse> {
+    const iid = this.requireInstanceId("writeAsync");
+    const timeoutMs =
+      options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
+    const body: Record<string, unknown> = {
+      instance_id: iid,
+      text,
+      extraction_logic: options?.extractionLogic ?? "deep",
+    };
+    if (options?.extractWriteId != null) {
+      body["extract_write_id"] = options.extractWriteId;
+    }
+    return postJson<AsyncWriteResponse>(
+      this.baseUrl,
+      "/write_async",
+      body,
+      this.token,
+      timeoutMs
+    );
+  }
+
+  async writeStatus(writeId: string, options?: { timeout?: number }): Promise<WriteStatusResponse> {
+    const timeoutMs =
+      options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
+    return postJson<WriteStatusResponse>(
+      this.baseUrl,
+      "/write_status",
+      { write_id: writeId },
       this.token,
       timeoutMs
     );
