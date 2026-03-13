@@ -3,14 +3,27 @@
  */
 
 import type {
+  AsyncWriteResponse,
   CreateInstanceResponse,
+  ExtractionLogic,
   ReadResponse,
   SchemaTypeValue,
   WriteResponse,
+  WriteStatusResponse,
 } from "./types.js";
 
 export { SchemaType } from "./types.js";
-export type { SchemaTypeValue, CreateInstanceResponse, WriteResponse, ReadResponse, ReaderResult } from "./types.js";
+export type {
+  AsyncWriteResponse,
+  CreateInstanceResponse,
+  ExtractionLogic,
+  ReadResponse,
+  ReaderResult,
+  SchemaTypeValue,
+  WriteQueueStatus,
+  WriteResponse,
+  WriteStatusResponse,
+} from "./types.js";
 
 const DEFAULT_BASE_URL = "http://0.0.0.0:8000";
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -92,7 +105,7 @@ async function postJson<T>(
 export interface XmemoryInstanceOptions {
   url?: string;
   token?: string;
-  timeout?: number;
+  timeoutMs?: number;
 }
 
 export class XmemoryClient {
@@ -103,7 +116,7 @@ export class XmemoryClient {
 
   constructor(options: XmemoryInstanceOptions = {}) {
     this.baseUrl = options.url ?? "";
-    this.timeoutMs = (options.timeout ?? 60) * 1000;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.token = options.token;
   }
 
@@ -137,16 +150,15 @@ export class XmemoryClient {
     return this.instanceId;
   }
 
-  async createInstance(schemaText: string, schemaType: SchemaTypeValue, timeout?: number): Promise<boolean> {
+  async createInstance(schemaText: string, schemaType: SchemaTypeValue, timeoutMs?: number): Promise<boolean> {
     const path = "/instance/create";
     const body = schemaType === 0 ? { yml_schema: schemaText } : { json_schema: schemaText };
-    const timeoutMs = timeout != null ? timeout * 1000 : this.timeoutMs;
     const response = await postJson<CreateInstanceResponse>(
       this.baseUrl,
       path,
       body,
       this.token,
-      timeoutMs
+      timeoutMs ?? this.timeoutMs
     );
     if (response.status === "ok" && response.instance_id) {
       this.instanceId = response.instance_id;
@@ -154,27 +166,56 @@ export class XmemoryClient {
     return response.status === "ok";
   }
 
-  async write(text: string, options?: { timeout?: number }): Promise<WriteResponse> {
+  async write(text: string, options?: { timeoutMs?: number; extractionLogic?: ExtractionLogic }): Promise<WriteResponse> {
     const iid = this.requireInstanceId("write");
-    const timeoutMs =
-      options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
     return postJson<WriteResponse>(
       this.baseUrl,
       "/write",
       {
         instance_id: iid,
         text,
-        extraction_logic: "deep",
+        extraction_logic: options?.extractionLogic ?? "deep",
       },
       this.token,
       timeoutMs
     );
   }
 
-  async read(query: string, options?: { timeout?: number }): Promise<ReadResponse> {
+  async writeAsync(text: string, options?: { timeoutMs?: number; extractionLogic?: ExtractionLogic; extractWriteId?: string }): Promise<AsyncWriteResponse> {
+    const iid = this.requireInstanceId("writeAsync");
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
+    const body: Record<string, unknown> = {
+      instance_id: iid,
+      text,
+      extraction_logic: options?.extractionLogic ?? "deep",
+    };
+    if (options?.extractWriteId != null) {
+      body["extract_write_id"] = options.extractWriteId;
+    }
+    return postJson<AsyncWriteResponse>(
+      this.baseUrl,
+      "/write_async",
+      body,
+      this.token,
+      timeoutMs
+    );
+  }
+
+  async writeStatus(writeId: string, options?: { timeoutMs?: number }): Promise<WriteStatusResponse> {
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
+    return postJson<WriteStatusResponse>(
+      this.baseUrl,
+      "/write_status",
+      { write_id: writeId },
+      this.token,
+      timeoutMs
+    );
+  }
+
+  async read(query: string, options?: { timeoutMs?: number }): Promise<ReadResponse> {
     const iid = this.requireInstanceId("read");
-    const timeoutMs =
-      options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
     return postJson<ReadResponse>(
       this.baseUrl,
       "/read",
