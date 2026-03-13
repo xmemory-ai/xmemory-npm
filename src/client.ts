@@ -105,7 +105,7 @@ async function postJson<T>(
 export interface XmemoryInstanceOptions {
   url?: string;
   token?: string;
-  timeout?: number;
+  timeoutMs?: number;
 }
 
 export class XmemoryClient {
@@ -116,7 +116,7 @@ export class XmemoryClient {
 
   constructor(options: XmemoryInstanceOptions = {}) {
     this.baseUrl = options.url ?? "";
-    this.timeoutMs = (options.timeout ?? 60) * 1000;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.token = options.token;
   }
 
@@ -150,16 +150,15 @@ export class XmemoryClient {
     return this.instanceId;
   }
 
-  async createInstance(schemaText: string, schemaType: SchemaTypeValue, timeout?: number): Promise<boolean> {
+  async createInstance(schemaText: string, schemaType: SchemaTypeValue, timeoutMs?: number): Promise<boolean> {
     const path = "/instance/create";
     const body = schemaType === 0 ? { yml_schema: schemaText } : { json_schema: schemaText };
-    const timeoutMs = timeout != null ? timeout * 1000 : this.timeoutMs;
     const response = await postJson<CreateInstanceResponse>(
       this.baseUrl,
       path,
       body,
       this.token,
-      timeoutMs
+      timeoutMs ?? this.timeoutMs
     );
     if (response.status === "ok" && response.instance_id) {
       this.instanceId = response.instance_id;
@@ -167,10 +166,9 @@ export class XmemoryClient {
     return response.status === "ok";
   }
 
-  async write(text: string, options?: { timeout?: number; extractionLogic?: ExtractionLogic }): Promise<WriteResponse> {
+  async write(text: string, options?: { timeoutMs?: number; extractionLogic?: ExtractionLogic }): Promise<WriteResponse> {
     const iid = this.requireInstanceId("write");
-    const timeoutMs =
-      options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
     return postJson<WriteResponse>(
       this.baseUrl,
       "/write",
@@ -184,11 +182,10 @@ export class XmemoryClient {
     );
   }
 
-  async writeAsync(text: string, options?: { timeout?: number; extractionLogic?: ExtractionLogic; extractWriteId?: string }): Promise<AsyncWriteResponse> {
+  async writeAsync(text: string, options?: { timeoutMs?: number; extractionLogic?: ExtractionLogic; extractWriteId?: string }): Promise<AsyncWriteResponse> {
     const iid = this.requireInstanceId("writeAsync");
-    const timeoutMs =
-      options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
-    const body: Record<string, unknown> = {a lot
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
+    const body: Record<string, unknown> = {
       instance_id: iid,
       text,
       extraction_logic: options?.extractionLogic ?? "deep",
@@ -205,9 +202,8 @@ export class XmemoryClient {
     );
   }
 
-  async writeStatus(writeId: string, options?: { timeout?: number }): Promise<WriteStatusResponse> {
-    const timeoutMs =
-      options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
+  async writeStatus(writeId: string, options?: { timeoutMs?: number }): Promise<WriteStatusResponse> {
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
     return postJson<WriteStatusResponse>(
       this.baseUrl,
       "/write_status",
@@ -217,10 +213,9 @@ export class XmemoryClient {
     );
   }
 
-  async read(query: string, options?: { timeout?: number }): Promise<ReadResponse> {
+  async read(query: string, options?: { timeoutMs?: number }): Promise<ReadResponse> {
     const iid = this.requireInstanceId("read");
-    const timeoutMs =
-      options?.timeout != null ? options.timeout * 1000 : this.timeoutMs;
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
     return postJson<ReadResponse>(
       this.baseUrl,
       "/read",
