@@ -69,3 +69,8 @@ export interface WriteStatusResponse {
   completed_at?: string | null;
   error_message?: string | null;
 }
+
+export interface GetInstanceSchemaResponse {
+  instance_id: string;
+  schema_yaml: string;
+}

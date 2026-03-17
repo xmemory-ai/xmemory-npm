@@ -6,6 +6,7 @@ import type {
   AsyncWriteResponse,
   CreateInstanceResponse,
   ExtractionLogic,
+  GetInstanceSchemaResponse,
   ReadResponse,
   SchemaTypeValue,
   WriteResponse,
@@ -17,6 +18,7 @@ export type {
   AsyncWriteResponse,
   CreateInstanceResponse,
   ExtractionLogic,
+  GetInstanceSchemaResponse,
   ReadResponse,
   ReaderResult,
   SchemaTypeValue,
@@ -38,7 +40,7 @@ export class XmemoryAPIError extends Error {
   }
 }
 
-async function getEnv(name: string): Promise<string | undefined> {
+function getEnv(name: string): string | undefined {
   if (typeof process !== "undefined" && process.env) {
     return process.env[name];
   }
@@ -61,6 +63,33 @@ async function fetchWithTimeout(
   } finally {
     clearTimeout(id);
   }
+}
+
+async function getJson<T>(
+  baseUrl: string,
+  path: string,
+  params: Record<string, string>,
+  token: string | undefined,
+  timeoutMs: number
+): Promise<T> {
+  const qs = new URLSearchParams(params).toString();
+  const url = `${baseUrl.replace(/\/$/, "")}${path}?${qs}`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetchWithTimeout(url, { method: "GET", headers, timeoutMs });
+  const raw = await res.text();
+  let payload: unknown;
+  try {
+    payload = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new XmemoryAPIError(`Invalid JSON from server (${res.status})`, res.status);
+  }
+  if (!res.ok) {
+    throw new XmemoryAPIError(`HTTP ${res.status}: ${raw.slice(0, 200)}`, res.status);
+  }
+  return payload as T;
 }
 
 async function postJson<T>(
@@ -115,14 +144,14 @@ export class XmemoryClient {
   instanceId: string | null = null;
 
   constructor(options: XmemoryInstanceOptions = {}) {
-    this.baseUrl = options.url ?? "";
+    this.baseUrl = options.url ?? DEFAULT_BASE_URL;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.token = options.token;
   }
 
   static async create(options: XmemoryInstanceOptions = {}): Promise<XmemoryClient> {
-    const url = options.url ?? (await getEnv("XMEM_API_URL")) ?? DEFAULT_BASE_URL;
-    const token = options.token ?? (await getEnv("XMEM_AUTH_TOKEN"));
+    const url = options.url ?? getEnv("XMEM_API_URL") ?? DEFAULT_BASE_URL;
+    const token = options.token ?? getEnv("XMEM_AUTH_TOKEN");
     const client = new XmemoryClient({ ...options, url, token });
     await client.checkHealth();
     return client;
@@ -226,6 +255,17 @@ export class XmemoryClient {
       },
       this.token,
       timeoutMs
+    );
+  }
+
+  async getSchema(instanceId?: string): Promise<GetInstanceSchemaResponse> {
+    const iid = instanceId ?? this.requireInstanceId("getSchema");
+    return getJson<GetInstanceSchemaResponse>(
+      this.baseUrl,
+      "/instance/schema",
+      { instance_id: iid },
+      this.token,
+      this.timeoutMs
     );
   }
 

@@ -106,6 +106,18 @@ console.log(resp.reader_result?.answer);
 
 Options: `{ timeoutMs? }`.
 
+### `getSchema(instanceId?) → Promise<GetInstanceSchemaResponse>`
+
+Fetch the YAML schema for an instance. Uses the current `instanceId` when no argument is given.
+
+```typescript
+const { schema_yaml } = await mem.getSchema();
+console.log(schema_yaml);
+
+// or for a specific instance without switching
+const { schema_yaml } = await mem.getSchema("other-id");
+```
+
 ## Error handling
 
 All errors raise `XmemoryAPIError`.

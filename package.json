@@ -1,9 +1,15 @@
 {
   "name": "xmemory",
-  "version": "1.2.0",
-  "description": "xmemory",
+  "version": "1.3.0",
+  "description": "TypeScript/JavaScript client for the Xmemory structured-memory API",
   "keywords": [
-    "xmemory"
+    "xmemory",
+    "memory",
+    "ai",
+    "llm",
+    "structured-data",
+    "knowledge-base",
+    "rag"
   ],
   "homepage": "https://github.com/xmemory-ai/xmemory-npm",
   "bugs": {
