@@ -69,9 +69,10 @@ Extract structured objects from `text` and store them in the instance.
 ```typescript
 const resp = await mem.write("Bob joined the team on Monday as a designer.");
 console.log(resp.status); // "ok" or "error"
+console.log(resp.trace_id); // request trace id when available
 ```
 
-Options: `{ timeoutMs?, extractionLogic? }` where `extractionLogic` is `"fast"`, `"regular"`, or `"deep"` (default: `"deep"`).
+Options: `{ timeoutMs?, extractionLogic?, diff_engine? }` where `extractionLogic` is `"fast"`, `"regular"`, or `"deep"` (default: `"deep"`).
 
 ### `writeAsync(text, options?) → Promise<AsyncWriteResponse>`
 
@@ -80,11 +81,12 @@ Start an asynchronous write and return immediately with a `write_id` for trackin
 ```typescript
 const resp = await mem.writeAsync("Carol is a manager based in Berlin.", {
   extractionLogic: "deep",
+  diff_engine: true,
 });
 console.log(resp.write_id); // use this to check status
 ```
 
-Options: `{ timeoutMs?, extractionLogic?, extractWriteId? }`.
+Options: `{ timeoutMs?, extractionLogic?, diff_engine? }`.
 
 ### `writeStatus(writeId, options?) → Promise<WriteStatusResponse>`
 
@@ -102,6 +104,7 @@ Query the instance and get a natural-language answer.
 ```typescript
 const resp = await mem.read("Who is on the team?");
 console.log(resp.reader_result?.answer);
+console.log(resp.trace_id); // request trace id when available
 ```
 
 Options: `{ timeoutMs? }`.
