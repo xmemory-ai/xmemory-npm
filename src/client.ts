@@ -166,7 +166,10 @@ export class XmemoryClient {
     return response.status === "ok";
   }
 
-  async write(text: string, options?: { timeoutMs?: number; extractionLogic?: ExtractionLogic }): Promise<WriteResponse> {
+  async write(
+    text: string,
+    options?: { timeoutMs?: number; extractionLogic?: ExtractionLogic; diff_engine?: boolean }
+  ): Promise<WriteResponse> {
     const iid = this.requireInstanceId("write");
     const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
     return postJson<WriteResponse>(
@@ -176,23 +179,29 @@ export class XmemoryClient {
         instance_id: iid,
         text,
         extraction_logic: options?.extractionLogic ?? "deep",
+        use_diff_engine: options?.diff_engine,
       },
       this.token,
       timeoutMs
     );
   }
 
-  async writeAsync(text: string, options?: { timeoutMs?: number; extractionLogic?: ExtractionLogic; extractWriteId?: string }): Promise<AsyncWriteResponse> {
+  async writeAsync(
+    text: string,
+    options?: {
+      timeoutMs?: number;
+      extractionLogic?: ExtractionLogic;
+      diff_engine?: boolean;
+    }
+  ): Promise<AsyncWriteResponse> {
     const iid = this.requireInstanceId("writeAsync");
     const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
     const body: Record<string, unknown> = {
       instance_id: iid,
       text,
       extraction_logic: options?.extractionLogic ?? "deep",
+      use_diff_engine: options?.diff_engine,
     };
-    if (options?.extractWriteId != null) {
-      body["extract_write_id"] = options.extractWriteId;
-    }
     return postJson<AsyncWriteResponse>(
       this.baseUrl,
       "/write_async",
@@ -216,7 +225,7 @@ export class XmemoryClient {
   async read(query: string, options?: { timeoutMs?: number }): Promise<ReadResponse> {
     const iid = this.requireInstanceId("read");
     const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
-    return postJson<ReadResponse>(
+    const response = await postJson<ReadResponse & { read_id?: string | null }>(
       this.baseUrl,
       "/read",
       {
@@ -227,6 +236,7 @@ export class XmemoryClient {
       this.token,
       timeoutMs
     );
+    return response;
   }
 
   get instance_id(): string | null {

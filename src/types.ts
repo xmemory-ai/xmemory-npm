@@ -25,10 +25,12 @@ export interface WriteRequest {
   instance_id: string;
   text: string;
   extraction_logic?: ExtractionLogic;
+  use_diff_engine?: boolean;
 }
 
 export interface WriteResponse {
   status: "ok" | "error";
+  trace_id?: string | null;
   error_message?: string | null;
 }
 
@@ -45,6 +47,7 @@ export interface ReaderResult {
 
 export interface ReadResponse {
   status: "ok" | "error";
+  trace_id?: string | null;
   reader_result?: ReaderResult | null;
   error_message?: string | null;
 }
