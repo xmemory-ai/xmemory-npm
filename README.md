@@ -95,7 +95,7 @@ await xm.admin.updateInstanceSchema(instanceId, newYml, SchemaType.YML);
 
 ```typescript
 const result = await xm.admin.generateSchema(clusterId, "Track user profiles and preferences");
-console.log(result.generated_schema);
+console.log(result.data_schema);
 ```
 
 ### Update metadata and delete
