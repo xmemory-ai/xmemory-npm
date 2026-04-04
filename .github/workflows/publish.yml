@@ -1,0 +1,43 @@
+name: Publish to npm
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Read package version
+        id: version
+        run: echo "tag=v$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag does not exist
+        run: |
+          if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
+            echo "::error::Tag ${{ steps.version.outputs.tag }} already exists. Bump the version before publishing."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create git tag
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"

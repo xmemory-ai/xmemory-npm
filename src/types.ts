@@ -1,74 +1,174 @@
 /**
- * Types for the xmemory API.
+ * Types, enums, and error classes for the xmemory API.
  */
 
-export const SchemaType = {
-  YML: 0,
-  JSON: 1,
-} as const;
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
 
+export const SchemaType = { YML: 0, JSON: 1 } as const;
 export type SchemaTypeValue = (typeof SchemaType)[keyof typeof SchemaType];
 
-export interface CreateInstanceYMLRequest {
-  yml_schema: string;
-}
-
-export interface CreateInstanceResponse {
-  status: "ok" | "error";
-  instance_id?: string | null;
-  error_message?: string | null;
-}
-
 export type ExtractionLogic = "fast" | "regular" | "deep";
+export type ReadMode = "single-answer" | "raw-tables" | "xresponse";
+export type WriteQueueStatus =
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "not_found";
 
-export interface WriteRequest {
-  instance_id: string;
-  text: string;
-  extraction_logic?: ExtractionLogic;
-  use_diff_engine?: boolean;
+// ---------------------------------------------------------------------------
+// Error classes
+// ---------------------------------------------------------------------------
+
+export class XmemoryAPIError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = "XmemoryAPIError";
+  }
 }
 
-export interface WriteResponse {
-  status: "ok" | "error";
-  trace_id?: string | null;
-  error_message?: string | null;
+export class XmemoryHealthCheckError extends XmemoryAPIError {
+  constructor(message: string, status?: number) {
+    super(message, status);
+    this.name = "XmemoryHealthCheckError";
+  }
 }
 
-export interface ReadRequest {
-  instance_id: string;
-  query: string;
-  mode?: "single-answer" | "raw-tables" | "xresponse";
+// ---------------------------------------------------------------------------
+// Public response interfaces
+// ---------------------------------------------------------------------------
+
+export interface ClusterInfo {
+  readonly id: string;
+  readonly org_id: string;
+  readonly name: string;
+  readonly description: string | null;
 }
 
-export interface ReaderResult {
-  answer?: string;
-  [key: string]: unknown;
+export interface InstanceInfo {
+  readonly id: string;
+  readonly cluster_id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly data_schema: Record<string, unknown> | null;
 }
 
-export interface ReadResponse {
-  status: "ok" | "error";
-  trace_id?: string | null;
-  reader_result?: ReaderResult | null;
-  error_message?: string | null;
+export interface InstanceSchemaInfo {
+  readonly data_schema: Record<string, unknown>;
 }
 
-export interface AsyncWriteResponse {
-  status: "ok" | "error";
-  write_id?: string | null;
-  error_message?: string | null;
+export interface ReadResult {
+  readonly trace_id: string | null;
+  readonly reader_result: unknown;
 }
 
-export type WriteQueueStatus = "queued" | "processing" | "completed" | "failed" | "not_found";
-
-export interface WriteStatusRequest {
-  write_id: string;
+export interface WriteResult {
+  readonly write_id: string;
+  readonly trace_id: string | null;
+  readonly cleaned_objects: unknown;
+  readonly diff_plan: unknown;
 }
 
-export interface WriteStatusResponse {
-  status: "ok" | "error";
-  write_id: string;
-  write_status: WriteQueueStatus;
-  error_detail?: string | null;
-  completed_at?: string | null;
-  error_message?: string | null;
+export interface AsyncWriteResult {
+  readonly write_id: string;
+}
+
+export interface WriteStatusResult {
+  readonly write_id: string;
+  readonly write_status: WriteQueueStatus;
+  readonly error_detail: string | null;
+  readonly completed_at: string | null;
+}
+
+export interface ExtractResult {
+  readonly trace_id: string | null;
+  readonly objects_extracted: unknown;
+}
+
+export interface GenerateSchemaResult {
+  readonly data_schema: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Options interfaces
+// ---------------------------------------------------------------------------
+
+export interface XmemoryClientOptions {
+  url?: string;
+  token?: string;
+  timeoutMs?: number;
+}
+
+export interface RequestOptions {
+  timeoutMs?: number;
+}
+
+export interface ReadOptions {
+  readMode?: ReadMode;
+  readId?: string;
+  timeoutMs?: number;
+}
+
+export interface WriteOptions {
+  extractionLogic?: ExtractionLogic;
+  diffEngine?: boolean;
+  timeoutMs?: number;
+}
+
+export interface ExtractOptions {
+  extractionLogic?: ExtractionLogic;
+  timeoutMs?: number;
+}
+
+export interface CreateInstanceOptions {
+  description?: string;
+  schemaDescription?: string;
+  timeoutMs?: number;
+}
+
+export interface GenerateSchemaOptions {
+  currentYmlSchema?: string;
+  timeoutMs?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Internal types (not re-exported from index.ts)
+// ---------------------------------------------------------------------------
+
+export interface ApiError {
+  readonly code: string;
+  readonly message: string;
+  readonly field?: string;
+  readonly resource_id?: string;
+}
+
+export interface RawApiResponse {
+  readonly ids: string[];
+  readonly items: unknown[];
+  readonly errors: ApiError[];
+}
+
+export interface InternalRequestOptions {
+  body?: Record<string, unknown>;
+  params?: Record<string, string | string[]>;
+  timeoutMs?: number;
+}
+
+export type RequestOneFn = <T>(method: string, path: string, options?: InternalRequestOptions) => Promise<T>;
+export type RequestListFn = <T>(method: string, path: string, options?: InternalRequestOptions) => Promise<T[]>;
+export type RequestIdsFn = (method: string, path: string, options?: InternalRequestOptions) => Promise<string[]>;
+
+export function buildInstanceSchema(
+  schemaText: string,
+  schemaType: SchemaTypeValue,
+): Record<string, unknown> {
+  if (schemaType === SchemaType.YML) {
+    return { yml: { value: schemaText } };
+  }
+  return { json_schema: { value: schemaText } };
 }

@@ -1,252 +1,291 @@
 /**
- * xmemory HTTP client for Node.js.
+ * XmemoryClient — main entry point for the xmemory API.
  */
 
-import type {
-  AsyncWriteResponse,
-  CreateInstanceResponse,
-  ExtractionLogic,
-  ReadResponse,
-  SchemaTypeValue,
-  WriteResponse,
-  WriteStatusResponse,
+import { InstanceHandle } from "./instance.js";
+import {
+  type ApiError,
+  type ClusterInfo,
+  type CreateInstanceOptions,
+  type GenerateSchemaOptions,
+  type GenerateSchemaResult,
+  type InstanceInfo,
+  type InstanceSchemaInfo,
+  type InternalRequestOptions,
+  type RawApiResponse,
+  type RequestOptions,
+  type SchemaTypeValue,
+  type XmemoryClientOptions,
+  XmemoryAPIError,
+  XmemoryHealthCheckError,
+  buildInstanceSchema,
 } from "./types.js";
 
-export { SchemaType } from "./types.js";
-export type {
-  AsyncWriteResponse,
-  CreateInstanceResponse,
-  ExtractionLogic,
-  ReadResponse,
-  ReaderResult,
-  SchemaTypeValue,
-  WriteQueueStatus,
-  WriteResponse,
-  WriteStatusResponse,
-} from "./types.js";
-
-const DEFAULT_BASE_URL = "http://0.0.0.0:8000";
+const DEFAULT_BASE_URL = "https://api.xmemory.ai";
 const DEFAULT_TIMEOUT_MS = 60_000;
 
-export class XmemoryAPIError extends Error {
-  constructor(
-    message: string,
-    public readonly status?: number
-  ) {
-    super(message);
-    this.name = "XmemoryAPIError";
-  }
+// ---------------------------------------------------------------------------
+// Admin namespace type (plain object, not a class)
+// ---------------------------------------------------------------------------
+
+export interface AdminNamespace {
+  listClusters(options?: RequestOptions & { ids?: string[] }): Promise<ClusterInfo[]>;
+  getCluster(clusterId: string, options?: RequestOptions): Promise<ClusterInfo>;
+  createInstance(
+    clusterId: string,
+    name: string,
+    schemaText: string,
+    schemaType: SchemaTypeValue,
+    options?: CreateInstanceOptions,
+  ): Promise<InstanceHandle>;
+  listInstances(options?: RequestOptions & { ids?: string[] }): Promise<InstanceInfo[]>;
+  getInstance(instanceId: string, options?: RequestOptions): Promise<InstanceInfo>;
+  deleteInstance(instanceId: string, options?: RequestOptions): Promise<string[]>;
+  getInstanceSchema(instanceId: string, options?: RequestOptions): Promise<InstanceSchemaInfo>;
+  updateInstanceSchema(
+    instanceId: string,
+    schemaText: string,
+    schemaType: SchemaTypeValue,
+    options?: RequestOptions,
+  ): Promise<InstanceInfo>;
+  updateInstanceMetadata(
+    instanceId: string,
+    name: string,
+    description: string,
+    options?: RequestOptions,
+  ): Promise<InstanceInfo>;
+  generateSchema(
+    clusterId: string,
+    schemaDescription: string,
+    options?: GenerateSchemaOptions,
+  ): Promise<GenerateSchemaResult>;
 }
 
-async function getEnv(name: string): Promise<string | undefined> {
-  if (typeof process !== "undefined" && process.env) {
-    return process.env[name];
-  }
-  return undefined;
-}
-
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit & { timeoutMs?: number }
-): Promise<Response> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      ...fetchOptions,
-      signal: controller.signal,
-    });
-    return res;
-  } finally {
-    clearTimeout(id);
-  }
-}
-
-async function postJson<T>(
-  baseUrl: string,
-  path: string,
-  body: object,
-  token: string | undefined,
-  timeoutMs: number
-): Promise<T> {
-  const url = `${baseUrl.replace(/\/$/, "")}${path}`;
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  const res = await fetchWithTimeout(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    timeoutMs,
-  });
-  const raw = await res.text();
-  let payload: unknown;
-  try {
-    payload = raw ? JSON.parse(raw) : {};
-  } catch {
-    throw new XmemoryAPIError(`Invalid JSON from server (${res.status})`, res.status);
-  }
-  if (typeof payload === "object" && payload !== null && (payload as { status?: string }).status === "error") {
-    const err = payload as { error_message?: string; error?: string };
-    const msg = err.error_message || err.error || String(payload);
-    throw new XmemoryAPIError(`${path} failed: ${msg}`, res.status);
-  }
-  if (!res.ok) {
-    throw new XmemoryAPIError(`HTTP ${res.status}: ${raw.slice(0, 200)}`, res.status);
-  }
-  return payload as T;
-}
-
-export interface XmemoryInstanceOptions {
-  url?: string;
-  token?: string;
-  timeoutMs?: number;
-}
+// ---------------------------------------------------------------------------
+// Client
+// ---------------------------------------------------------------------------
 
 export class XmemoryClient {
-  readonly baseUrl: string;
-  readonly timeoutMs: number;
-  readonly token: string | undefined;
-  instanceId: string | null = null;
+  private readonly _baseUrl: string;
+  private readonly _timeoutMs: number;
+  private readonly _token: string | undefined;
 
-  constructor(options: XmemoryInstanceOptions = {}) {
-    this.baseUrl = options.url ?? "";
-    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.token = options.token;
+  readonly admin: AdminNamespace;
+
+  constructor(options: XmemoryClientOptions = {}) {
+    const env = typeof process !== "undefined" ? process.env : undefined;
+    this._baseUrl = (options.url ?? env?.XMEM_API_URL ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+    this._token = options.token ?? env?.XMEM_AUTH_TOKEN;
+    this._timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.admin = this._buildAdmin();
   }
 
-  static async create(options: XmemoryInstanceOptions = {}): Promise<XmemoryClient> {
-    const url = options.url ?? (await getEnv("XMEM_API_URL")) ?? DEFAULT_BASE_URL;
-    const token = options.token ?? (await getEnv("XMEM_AUTH_TOKEN"));
-    const client = new XmemoryClient({ ...options, url, token });
+  /** Factory that performs a health check before returning the client. */
+  static async create(options: XmemoryClientOptions = {}): Promise<XmemoryClient> {
+    const client = new XmemoryClient(options);
     await client.checkHealth();
     return client;
   }
 
-  private async checkHealth(): Promise<void> {
-    const url = `${this.baseUrl.replace(/\/$/, "")}/api/healthz`;
-    const res = await fetchWithTimeout(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      timeoutMs: this.timeoutMs,
-    });
-    if (!res.ok) {
-      throw new XmemoryAPIError(
-        `Health check failed: ${res.status} at ${url}`,
-        res.status
+  /** Return an InstanceHandle scoped to the given instance ID. */
+  instance(instanceId: string): InstanceHandle {
+    return new InstanceHandle(instanceId, this._requestOne.bind(this));
+  }
+
+  /** GET /healthz — throws XmemoryHealthCheckError on failure. */
+  async checkHealth(): Promise<void> {
+    const url = `${this._baseUrl}/healthz`;
+    try {
+      const res = await this._fetch(url, { method: "GET" }, this._timeoutMs);
+      if (!res.ok) {
+        throw new XmemoryHealthCheckError(`Health check failed: HTTP ${res.status} at ${url}`, res.status);
+      }
+    } catch (err) {
+      if (err instanceof XmemoryHealthCheckError) throw err;
+      throw new XmemoryHealthCheckError(
+        `Health check failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
 
-  private requireInstanceId(op: string): string {
-    if (!this.instanceId) {
-      throw new XmemoryAPIError(`instance_id is required for ${op}() but none was provided or saved.`);
+  // -----------------------------------------------------------------------
+  // Private: HTTP layer
+  // -----------------------------------------------------------------------
+
+  private async _fetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
     }
-    return this.instanceId;
   }
 
-  async createInstance(schemaText: string, schemaType: SchemaTypeValue, timeoutMs?: number): Promise<boolean> {
-    const path = "/instance/create";
-    const body = schemaType === 0 ? { yml_schema: schemaText } : { json_schema: schemaText };
-    const response = await postJson<CreateInstanceResponse>(
-      this.baseUrl,
-      path,
-      body,
-      this.token,
-      timeoutMs ?? this.timeoutMs
-    );
-    if (response.status === "ok" && response.instance_id) {
-      this.instanceId = response.instance_id;
-    }
-    return response.status === "ok";
-  }
-
-  async write(
-    text: string,
-    options?: { timeoutMs?: number; extractionLogic?: ExtractionLogic; diff_engine?: boolean }
-  ): Promise<WriteResponse> {
-    const iid = this.requireInstanceId("write");
-    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
-    return postJson<WriteResponse>(
-      this.baseUrl,
-      "/write",
-      {
-        instance_id: iid,
-        text,
-        extraction_logic: options?.extractionLogic ?? "deep",
-        use_diff_engine: options?.diff_engine,
-      },
-      this.token,
-      timeoutMs
-    );
-  }
-
-  async writeAsync(
-    text: string,
-    options?: {
-      timeoutMs?: number;
-      extractionLogic?: ExtractionLogic;
-      diff_engine?: boolean;
-    }
-  ): Promise<AsyncWriteResponse> {
-    const iid = this.requireInstanceId("writeAsync");
-    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
-    const body: Record<string, unknown> = {
-      instance_id: iid,
-      text,
-      extraction_logic: options?.extractionLogic ?? "deep",
-      use_diff_engine: options?.diff_engine,
+  private _headers(): Record<string, string> {
+    const h: Record<string, string> = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
     };
-    return postJson<AsyncWriteResponse>(
-      this.baseUrl,
-      "/write_async",
-      body,
-      this.token,
-      timeoutMs
-    );
+    if (this._token) h["Authorization"] = `Bearer ${this._token}`;
+    return h;
   }
 
-  async writeStatus(writeId: string, options?: { timeoutMs?: number }): Promise<WriteStatusResponse> {
-    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
-    return postJson<WriteStatusResponse>(
-      this.baseUrl,
-      "/write_status",
-      { write_id: writeId },
-      this.token,
-      timeoutMs
-    );
-  }
+  /** Core request — returns the raw API wrapper `{ids, items, errors}`. */
+  private async _request(
+    method: string,
+    path: string,
+    options?: InternalRequestOptions,
+  ): Promise<RawApiResponse> {
+    let url = `${this._baseUrl}${path}`;
 
-  async read(query: string, options?: { timeoutMs?: number }): Promise<ReadResponse> {
-    const iid = this.requireInstanceId("read");
-    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
-    const response = await postJson<ReadResponse & { read_id?: string | null }>(
-      this.baseUrl,
-      "/read",
-      {
-        instance_id: iid,
-        query,
-        mode: "single-answer",
-      },
-      this.token,
-      timeoutMs
-    );
+    if (options?.params) {
+      const sp = new URLSearchParams();
+      for (const [key, val] of Object.entries(options.params)) {
+        if (Array.isArray(val)) {
+          for (const v of val) sp.append(key, v);
+        } else {
+          sp.append(key, val);
+        }
+      }
+      const qs = sp.toString();
+      if (qs) url += `?${qs}`;
+    }
+
+    const timeoutMs = options?.timeoutMs ?? this._timeoutMs;
+    const init: RequestInit = { method, headers: this._headers() };
+    if (options?.body && method !== "GET") {
+      init.body = JSON.stringify(options.body);
+    }
+
+    const res = await this._fetch(url, init, timeoutMs);
+    const raw = await res.text();
+
+    let payload: unknown;
+    try {
+      payload = raw ? JSON.parse(raw) : {};
+    } catch {
+      throw new XmemoryAPIError(`Invalid JSON from server (${res.status}): ${raw.slice(0, 200)}`, res.status);
+    }
+
+    if (!res.ok) {
+      const msg =
+        typeof payload === "object" && payload !== null && "message" in payload
+          ? String((payload as { message: string }).message)
+          : raw.slice(0, 200);
+      throw new XmemoryAPIError(`HTTP ${res.status}: ${msg}`, res.status);
+    }
+
+    const response = payload as RawApiResponse;
+
+    if (response.errors?.length) {
+      const first: ApiError = response.errors[0];
+      throw new XmemoryAPIError(`API error: ${first.message} (${first.code})`, res.status);
+    }
+
     return response;
   }
 
-  get instance_id(): string | null {
-    return this.instanceId;
+  private async _requestOne<T>(method: string, path: string, options?: InternalRequestOptions): Promise<T> {
+    const response = await this._request(method, path, options);
+    if (!response.items?.length) {
+      throw new XmemoryAPIError(`Expected one item from ${method} ${path}, got none`);
+    }
+    return response.items[0] as T;
+  }
+
+  private async _requestList<T>(method: string, path: string, options?: InternalRequestOptions): Promise<T[]> {
+    const response = await this._request(method, path, options);
+    return (response.items ?? []) as T[];
+  }
+
+  private async _requestIds(method: string, path: string, options?: InternalRequestOptions): Promise<string[]> {
+    const response = await this._request(method, path, options);
+    return response.ids ?? [];
+  }
+
+  // -----------------------------------------------------------------------
+  // Private: build admin namespace
+  // -----------------------------------------------------------------------
+
+  private _buildAdmin(): AdminNamespace {
+    return {
+      listClusters: async (options?) => {
+        const params = options?.ids ? { ids: options.ids } : undefined;
+        return this._requestList<ClusterInfo>("GET", "/clusters", { params, timeoutMs: options?.timeoutMs });
+      },
+
+      getCluster: async (clusterId, options?) => {
+        return this._requestOne<ClusterInfo>("GET", `/clusters/${clusterId}`, {
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      createInstance: async (clusterId, name, schemaText, schemaType, options?) => {
+        const body: Record<string, unknown> = {
+          name,
+          instance_schema: buildInstanceSchema(schemaText, schemaType),
+        };
+        if (options?.description != null) body.description = options.description;
+        if (options?.schemaDescription != null) body.schema_description = options.schemaDescription;
+        const info = await this._requestOne<InstanceInfo>("POST", `/clusters/${clusterId}/instances`, {
+          body,
+          timeoutMs: options?.timeoutMs,
+        });
+        return this.instance(info.id);
+      },
+
+      listInstances: async (options?) => {
+        const params = options?.ids ? { ids: options.ids } : undefined;
+        return this._requestList<InstanceInfo>("GET", "/instances", { params, timeoutMs: options?.timeoutMs });
+      },
+
+      getInstance: async (instanceId, options?) => {
+        return this._requestOne<InstanceInfo>("GET", `/instances/${instanceId}`, {
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      deleteInstance: async (instanceId, options?) => {
+        return this._requestIds("DELETE", `/instances/${instanceId}`, {
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      getInstanceSchema: async (instanceId, options?) => {
+        return this._requestOne<InstanceSchemaInfo>("GET", `/instances/${instanceId}/schema`, {
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      updateInstanceSchema: async (instanceId, schemaText, schemaType, options?) => {
+        return this._requestOne<InstanceInfo>("PUT", `/instances/${instanceId}/schema`, {
+          body: { instance_schema: buildInstanceSchema(schemaText, schemaType) },
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      updateInstanceMetadata: async (instanceId, name, description, options?) => {
+        return this._requestOne<InstanceInfo>("PUT", `/instances/${instanceId}`, {
+          body: { name, description },
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      generateSchema: async (clusterId, schemaDescription, options?) => {
+        const body: Record<string, unknown> = { schema_description: schemaDescription };
+        if (options?.currentYmlSchema != null) body.current_yml_schema = options.currentYmlSchema;
+        return this._requestOne<GenerateSchemaResult>(
+          "POST",
+          `/clusters/${clusterId}/instances/generate_schema`,
+          { body, timeoutMs: options?.timeoutMs },
+        );
+      },
+    };
   }
 }
 
-/**
- * Create an xmemory client.
- */
-export async function xmemoryInstance(options: XmemoryInstanceOptions = {}): Promise<XmemoryClient> {
+/** Convenience factory — creates a client with a health check. */
+export async function xmemoryInstance(options: XmemoryClientOptions = {}): Promise<XmemoryClient> {
   return XmemoryClient.create(options);
 }
