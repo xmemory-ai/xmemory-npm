@@ -110,7 +110,7 @@ export interface RequestOptions {
 
 export interface ReadOptions {
   readMode?: ReadMode;
-  readId?: string;
+  traceId?: string;
   timeoutMs?: number;
 }
 

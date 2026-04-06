@@ -30,7 +30,7 @@ export class InstanceHandle {
       query,
       mode: options?.readMode ?? "single-answer",
     };
-    if (options?.readId != null) body.read_id = options.readId;
+    if (options?.traceId != null) body.trace_id = options.traceId;
     return this._requestOne<ReadResult>("POST", `/instances/${this.id}/read`, {
       body,
       timeoutMs: options?.timeoutMs,

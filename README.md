@@ -150,7 +150,7 @@ const result = await inst.read("Who is on the team?");
 console.log(result.reader_result);
 ```
 
-Options: `{ readMode?, readId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
+Options: `{ readMode?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
 
 ### `inst.extract(text, options?)` → `ExtractResult`
 
