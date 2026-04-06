@@ -148,9 +148,9 @@ export interface ApiError {
 }
 
 export interface RawApiResponse {
-  readonly ids: string[];
-  readonly items: unknown[];
-  readonly errors: ApiError[];
+  readonly ids?: string[];
+  readonly items?: unknown[];
+  readonly errors?: ApiError[];
 }
 
 export interface InternalRequestOptions {

@@ -11,7 +11,7 @@ npm install xmemory
 ## Quick start
 
 ```typescript
-import { XmemoryClient, SchemaType } from "xmemory";
+import { XmemoryClient } from "xmemory";
 
 const xm = new XmemoryClient({
   url: "https://api.xmemory.ai",  // or set XMEM_API_URL env var
@@ -40,13 +40,13 @@ console.log(result.reader_result);
 import { XmemoryClient, xmemoryInstance } from "xmemory";
 
 // Option 1: constructor (no health check)
-const xm = new XmemoryClient({ token: "..." });
+const xm1 = new XmemoryClient({ token: "..." });
 
 // Option 2: factory with health check
-const xm = await XmemoryClient.create({ token: "..." });
+const xm2 = await XmemoryClient.create({ token: "..." });
 
 // Option 3: convenience function (same as Option 2)
-const xm = await xmemoryInstance({ token: "..." });
+const xm3 = await xmemoryInstance({ token: "..." });
 ```
 
 ## Admin operations
@@ -173,7 +173,7 @@ console.log(schema.data_schema);
 All errors throw `XmemoryAPIError`. Health check failures throw `XmemoryHealthCheckError` (a subclass).
 
 ```typescript
-import { XmemoryAPIError, XmemoryHealthCheckError } from "xmemory";
+import { XmemoryClient, XmemoryAPIError, XmemoryHealthCheckError } from "xmemory";
 
 try {
   const xm = await XmemoryClient.create({ token: "..." });

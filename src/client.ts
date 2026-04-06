@@ -122,11 +122,11 @@ export class XmemoryClient {
     }
   }
 
-  private _headers(): Record<string, string> {
+  private _headers(hasBody: boolean = false): Record<string, string> {
     const h: Record<string, string> = {
       Accept: "application/json",
-      "Content-Type": "application/json",
     };
+    if (hasBody) h["Content-Type"] = "application/json";
     if (this._token) h["Authorization"] = `Bearer ${this._token}`;
     return h;
   }
@@ -153,9 +153,10 @@ export class XmemoryClient {
     }
 
     const timeoutMs = options?.timeoutMs ?? this._timeoutMs;
-    const init: RequestInit = { method, headers: this._headers() };
-    if (options?.body && method !== "GET") {
-      init.body = JSON.stringify(options.body);
+    const hasBody = !!(options?.body && method !== "GET");
+    const init: RequestInit = { method, headers: this._headers(hasBody) };
+    if (hasBody) {
+      init.body = JSON.stringify(options!.body);
     }
 
     const res = await this._fetch(url, init, timeoutMs);
@@ -188,10 +189,14 @@ export class XmemoryClient {
 
   private async _requestOne<T>(method: string, path: string, options?: InternalRequestOptions): Promise<T> {
     const response = await this._request(method, path, options);
-    if (!response.items?.length) {
+    const items = response.items ?? [];
+    if (items.length === 0) {
       throw new XmemoryAPIError(`Expected one item from ${method} ${path}, got none`);
     }
-    return response.items[0] as T;
+    if (items.length > 1) {
+      throw new XmemoryAPIError(`Expected one item from ${method} ${path}, got ${items.length}`);
+    }
+    return items[0] as T;
   }
 
   private async _requestList<T>(method: string, path: string, options?: InternalRequestOptions): Promise<T[]> {
