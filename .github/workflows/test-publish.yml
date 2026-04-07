@@ -1,12 +1,13 @@
-name: Test
+name: Test publish (dry run)
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
-  test:
+  test-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -14,7 +15,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - run: npm ci
 
       - run: npm test
+
+      - run: npm publish --provenance --dry-run

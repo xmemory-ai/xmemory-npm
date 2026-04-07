@@ -15,7 +15,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
 
@@ -29,9 +29,6 @@ jobs:
             echo "::error::Tag ${{ steps.version.outputs.tag }} already exists. Bump the version before publishing."
             exit 1
           fi
-
-      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x with Node 22.
-      - run: npm install -g npm@latest
 
       - run: npm ci
 
