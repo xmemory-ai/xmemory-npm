@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
 
@@ -21,6 +21,4 @@ jobs:
 
       - run: npm test
 
-      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x with Node 22.
-      # Use npx to invoke a fresh npm without overwriting the running one (which corrupts itself).
-      - run: npx -y npm@11.6.2 publish --provenance --dry-run
+      - run: npm publish --provenance --dry-run
