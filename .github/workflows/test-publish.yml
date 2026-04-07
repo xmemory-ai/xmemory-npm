@@ -1,0 +1,31 @@
+name: Test publish (dry run)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  test-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x with Node 22.
+      # --force avoids MODULE_NOT_FOUND from the bundled npm self-upgrading in place.
+      - run: npm install -g "npm@>=11.5.1 <12" --force
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm publish --provenance --dry-run
