@@ -30,6 +30,9 @@ jobs:
             exit 1
           fi
 
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x with Node 22.
+      - run: npm install -g npm@latest
+
       - run: npm ci
 
       - run: npm test
