@@ -2,6 +2,7 @@ name: Test publish (dry run)
 
 on:
   workflow_dispatch:
+  push:
 
 jobs:
   test-publish:
