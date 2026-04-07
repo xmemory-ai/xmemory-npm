@@ -17,12 +17,10 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x with Node 22.
-      # --force avoids MODULE_NOT_FOUND from the bundled npm self-upgrading in place.
-      - run: npm install -g "npm@>=11.5.1 <12" --force
-
       - run: npm ci
 
       - run: npm test
 
-      - run: npm publish --provenance --dry-run
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x with Node 22.
+      # Use npx to invoke a fresh npm without overwriting the running one (which corrupts itself).
+      - run: npx -y npm@11.6.2 publish --provenance --dry-run
