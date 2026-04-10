@@ -95,6 +95,35 @@ export interface GenerateSchemaResult {
 }
 
 // ---------------------------------------------------------------------------
+// Describe types
+// ---------------------------------------------------------------------------
+
+export interface ToolParameterDescription {
+  readonly name: string;
+  readonly type: string;
+  readonly description: string;
+  readonly required: boolean;
+  readonly enum?: string[];
+  readonly default?: string;
+}
+
+export interface ToolDescription {
+  readonly name: string;
+  readonly description: string;
+  readonly when_to_use: string;
+  readonly parameters: ToolParameterDescription[];
+  readonly http_method: string;
+  readonly http_path: string;
+}
+
+export interface RawDescribeResult {
+  readonly instance_id: string;
+  readonly instance_name: string;
+  readonly schema_summary: string;
+  readonly tools: ToolDescription[];
+}
+
+// ---------------------------------------------------------------------------
 // Options interfaces
 // ---------------------------------------------------------------------------
 

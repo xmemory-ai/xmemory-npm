@@ -7,7 +7,7 @@ export { XmemoryClient, xmemoryInstance } from "./client.js";
 export type { AdminNamespace } from "./client.js";
 
 // Instance handle
-export { InstanceHandle } from "./instance.js";
+export { DescribeResult, InstanceHandle } from "./instance.js";
 
 // Error classes
 export { XmemoryAPIError, XmemoryHealthCheckError } from "./types.js";
@@ -38,4 +38,7 @@ export type {
   WriteStatusResult,
   ExtractResult,
   GenerateSchemaResult,
+  ToolDescription,
+  ToolParameterDescription,
+  RawDescribeResult,
 } from "./types.js";
