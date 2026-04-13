@@ -89,7 +89,7 @@ export class XmemoryClient {
 
   /** Return an InstanceHandle scoped to the given instance ID. */
   instance(instanceId: string): InstanceHandle {
-    return new InstanceHandle(instanceId, this._requestOne.bind(this), this._requestIds.bind(this));
+    return new InstanceHandle(instanceId, this._requestOne.bind(this));
   }
 
   /** GET /healthz — throws XmemoryHealthCheckError on failure. */

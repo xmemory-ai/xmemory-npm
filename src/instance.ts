@@ -6,23 +6,18 @@ import type {
   AsyncWriteResult,
   ExtractOptions,
   ExtractResult,
-  InstanceInfo,
   InstanceSchemaInfo,
   RawDescribeResult,
   ReadOptions,
   ReadResult,
-  RequestIdsFn,
   RequestOneFn,
   RequestOptions,
-  SchemaTypeValue,
   ToolDescription,
   ToolParameterDescription,
   WriteOptions,
   WriteResult,
   WriteStatusResult,
 } from "./types.js";
-
-import { buildInstanceSchema } from "./types.js";
 
 const DEFAULT_DESCRIBE_TTL_MS = 300_000; // 5 minutes
 
@@ -129,15 +124,13 @@ function buildJsonSchemaProps(params: readonly ToolParameterDescription[]): {
 export class InstanceHandle {
   readonly id: string;
   private readonly _requestOne: RequestOneFn;
-  private readonly _requestIds: RequestIdsFn;
   private _describeCache: DescribeResult | null = null;
   private _describeCacheAt = 0;
   private _describeTtlMs = DEFAULT_DESCRIBE_TTL_MS;
 
-  constructor(id: string, requestOne: RequestOneFn, requestIds: RequestIdsFn) {
+  constructor(id: string, requestOne: RequestOneFn) {
     this.id = id;
     this._requestOne = requestOne;
-    this._requestIds = requestIds;
   }
 
   async read(query: string, options?: ReadOptions): Promise<ReadResult> {
@@ -196,35 +189,6 @@ export class InstanceHandle {
 
   async getSchema(options?: RequestOptions): Promise<InstanceSchemaInfo> {
     return this._requestOne<InstanceSchemaInfo>("GET", `/instances/${this.id}/schema`, {
-      timeoutMs: options?.timeoutMs,
-    });
-  }
-
-  async updateSchema(
-    schemaText: string,
-    schemaType: SchemaTypeValue,
-    options?: RequestOptions,
-  ): Promise<InstanceInfo> {
-    return this._requestOne<InstanceInfo>("PUT", `/instances/${this.id}/schema`, {
-      body: { instance_schema: buildInstanceSchema(schemaText, schemaType) },
-      timeoutMs: options?.timeoutMs,
-    });
-  }
-
-  async updateMetadata(
-    name: string,
-    description: string | null,
-    options?: RequestOptions,
-  ): Promise<InstanceInfo> {
-    return this._requestOne<InstanceInfo>("PUT", `/instances/${this.id}`, {
-      body: { name, description },
-      timeoutMs: options?.timeoutMs,
-    });
-  }
-
-  /** Delete this instance and all its data. Returns the list of deleted IDs. */
-  async delete(options?: RequestOptions): Promise<string[]> {
-    return this._requestIds("DELETE", `/instances/${this.id}`, {
       timeoutMs: options?.timeoutMs,
     });
   }
