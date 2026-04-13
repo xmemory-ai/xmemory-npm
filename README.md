@@ -168,6 +168,19 @@ const schema = await inst.getSchema();
 console.log(schema.data_schema);
 ```
 
+### `inst.describe(options?)` → `DescribeResult`
+
+Get agent-facing tool descriptions enriched with the instance's schema.
+
+```typescript
+const desc = await inst.describe();
+console.log(desc.asText());              // plain text for system prompts
+const tools = desc.asAnthropicTools();   // Anthropic tool-use format
+const tools = desc.asOpenaiTools();      // OpenAI function-calling format
+```
+
+Results are cached for 5 minutes. Call `inst.clearDescribeCache()` to force a refresh.
+
 ## Error handling
 
 All errors throw `XmemoryAPIError`. Health check failures throw `XmemoryHealthCheckError` (a subclass).
