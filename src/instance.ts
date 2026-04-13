@@ -34,7 +34,6 @@ export class DescribeResult {
     this.tools = raw.tools;
   }
 
-  /** Plain-text representation suitable for injecting into an LLM system prompt. */
   /**
    * Plain-text representation suitable for injecting into an LLM system prompt.
    *
