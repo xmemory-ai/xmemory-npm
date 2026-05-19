@@ -129,6 +129,8 @@ export interface RawDescribeResult {
 
 export interface XmemoryClientOptions {
   url?: string;
+  apiKey?: string;
+  /** @deprecated Use `apiKey` instead. Will be removed in a future release. */
   token?: string;
   timeoutMs?: number;
 }

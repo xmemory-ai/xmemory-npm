@@ -24,6 +24,13 @@ import {
 const DEFAULT_BASE_URL = "https://api.xmemory.ai";
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+const ORANGE = "\x1b[38;5;208m";
+const RESET = "\x1b[0m";
+
+function deprecationWarning(message: string): void {
+  console.warn(`${ORANGE}[xmemory] DEPRECATION: ${message}${RESET}`);
+}
+
 // ---------------------------------------------------------------------------
 // Admin namespace type (plain object, not a class)
 // ---------------------------------------------------------------------------
@@ -68,16 +75,37 @@ export interface AdminNamespace {
 export class XmemoryClient {
   private readonly _baseUrl: string;
   private readonly _timeoutMs: number;
-  private readonly _token: string | undefined;
+  private readonly _apiKey: string | undefined;
 
   readonly admin: AdminNamespace;
 
   constructor(options: XmemoryClientOptions = {}) {
     const env = typeof process !== "undefined" ? process.env : undefined;
     this._baseUrl = (options.url ?? env?.XMEM_API_URL ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
-    this._token = options.token ?? env?.XMEM_AUTH_TOKEN;
+    this._apiKey = XmemoryClient._resolveApiKey(options, env);
     this._timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.admin = this._buildAdmin();
+  }
+
+  private static _resolveApiKey(
+    options: XmemoryClientOptions,
+    env: NodeJS.ProcessEnv | undefined,
+  ): string | undefined {
+    if (options.apiKey != null) return options.apiKey;
+    if (options.token != null) {
+      deprecationWarning(
+        "The `token` constructor option is deprecated and will be removed soon. Use `apiKey` instead.",
+      );
+      return options.token;
+    }
+    if (env?.XMEM_API_KEY) return env.XMEM_API_KEY;
+    if (env?.XMEM_AUTH_TOKEN) {
+      deprecationWarning(
+        "The `XMEM_AUTH_TOKEN` environment variable is deprecated and will be removed soon. Use `XMEM_API_KEY` instead.",
+      );
+      return env.XMEM_AUTH_TOKEN;
+    }
+    return undefined;
   }
 
   /** Factory that performs a health check before returning the client. */
@@ -127,7 +155,7 @@ export class XmemoryClient {
       Accept: "application/json",
     };
     if (hasBody) h["Content-Type"] = "application/json";
-    if (this._token) h["Authorization"] = `Bearer ${this._token}`;
+    if (this._apiKey) h["Authorization"] = `Bearer ${this._apiKey}`;
     return h;
   }
 

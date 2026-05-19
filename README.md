@@ -15,7 +15,7 @@ import { XmemoryClient } from "xmemory";
 
 const xm = new XmemoryClient({
   url: "https://api.xmemory.ai",  // or set XMEM_API_URL env var
-  token: "<your-token>",          // or set XMEM_AUTH_TOKEN env var
+  apiKey: "<your-api-key>",       // or set XMEM_API_KEY env var
 });
 
 // Write and read from an existing instance
@@ -28,11 +28,13 @@ console.log(result.reader_result);
 
 ## Configuration
 
-| Parameter   | Env var           | Default                    | Description                            |
-|-------------|-------------------|----------------------------|----------------------------------------|
-| `url`       | `XMEM_API_URL`    | `https://api.xmemory.ai`  | Base URL of the Xmemory API            |
-| `token`     | `XMEM_AUTH_TOKEN` | `undefined`                | Bearer token for authentication        |
-| `timeoutMs` | —                 | `60000`                    | Default request timeout in milliseconds |
+| Parameter   | Env var          | Default                   | Description                             |
+|-------------|------------------|---------------------------|-----------------------------------------|
+| `url`       | `XMEM_API_URL`   | `https://api.xmemory.ai`  | Base URL of the Xmemory API             |
+| `apiKey`    | `XMEM_API_KEY`   | `undefined`               | Bearer API key for authentication       |
+| `timeoutMs` | —                | `60000`                   | Default request timeout in milliseconds |
+
+The legacy `token` option and `XMEM_AUTH_TOKEN` env var are still accepted for backwards compatibility but are deprecated and will be removed in a future release. Using them prints a deprecation warning. If both the new and legacy values are set, the new ones win.
 
 ## Creating a client
 
@@ -40,13 +42,13 @@ console.log(result.reader_result);
 import { XmemoryClient, xmemoryInstance } from "xmemory";
 
 // Option 1: constructor (no health check)
-const xm1 = new XmemoryClient({ token: "..." });
+const xm1 = new XmemoryClient({ apiKey: "..." });
 
 // Option 2: factory with health check
-const xm2 = await XmemoryClient.create({ token: "..." });
+const xm2 = await XmemoryClient.create({ apiKey: "..." });
 
 // Option 3: convenience function (same as Option 2)
-const xm3 = await xmemoryInstance({ token: "..." });
+const xm3 = await xmemoryInstance({ apiKey: "..." });
 ```
 
 ## Admin operations
@@ -189,7 +191,7 @@ All errors throw `XmemoryAPIError`. Health check failures throw `XmemoryHealthCh
 import { XmemoryClient, XmemoryAPIError, XmemoryHealthCheckError } from "xmemory";
 
 try {
-  const xm = await XmemoryClient.create({ token: "..." });
+  const xm = await XmemoryClient.create({ apiKey: "..." });
 } catch (e) {
   if (e instanceof XmemoryHealthCheckError) {
     console.error("Server unreachable:", e.message);

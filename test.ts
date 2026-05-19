@@ -25,7 +25,7 @@ check("SchemaType.YML === 0", SchemaType.YML === 0);
 check("SchemaType.JSON === 1", SchemaType.JSON === 1);
 
 // Client is constructable (no health check)
-const client = new XmemoryClient({ url: "http://localhost:9999", token: "test" });
+const client = new XmemoryClient({ url: "http://localhost:9999", apiKey: "test" });
 check("client instanceof XmemoryClient", client instanceof XmemoryClient);
 
 // admin namespace has expected methods
@@ -100,7 +100,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => { status: numbe
     return { status: 200, body: { items: [{ id: "1" }] } };
   });
 
-  const c = new XmemoryClient({ url: "http://localhost:1", token: "t" });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
 
   // GET request — should NOT have Content-Type
   await c.admin.listClusters();
@@ -125,7 +125,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => { status: numbe
     return { status: 200, body: { items: [{ id: "1" }, { id: "2" }, { id: "3" }] } };
   });
 
-  const c = new XmemoryClient({ url: "http://localhost:1", token: "t" });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
   let threwOnMultiple = false;
   let errorMsg = "";
   try {
@@ -152,7 +152,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => { status: numbe
     return { status: 200, body: { items: [] } };
   });
 
-  const c = new XmemoryClient({ url: "http://localhost:1", token: "t" });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
   let threwOnNone = false;
   try {
     await c.admin.getCluster("some-cluster");
@@ -174,7 +174,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => { status: numbe
     return { status: 200, body: { items: [{ id: "cluster-1", name: "test" }] } };
   });
 
-  const c = new XmemoryClient({ url: "http://localhost:1", token: "t" });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
   const result = await c.admin.getCluster("cluster-1");
   check("_requestOne returns item on exactly one", (result as any).id === "cluster-1");
 
@@ -192,7 +192,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => { status: numbe
     return { status: 200, body: {} };
   });
 
-  const c = new XmemoryClient({ url: "http://localhost:1", token: "t" });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
 
   // _requestList should return empty array when items is undefined
   const list = await c.admin.listClusters();
@@ -214,7 +214,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => { status: numbe
     };
   });
 
-  const c = new XmemoryClient({ url: "http://localhost:1", token: "t" });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
   let threwApiError = false;
   let apiErrorMsg = "";
   try {
@@ -228,6 +228,160 @@ function mockFetch(handler: (url: string, init?: RequestInit) => { status: numbe
   check("API errors array triggers throw", threwApiError);
   check("API error message included", apiErrorMsg.includes("bad request"));
 
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: `token` constructor option is deprecated — warns in orange, still works
+// ---------------------------------------------------------------------------
+
+function captureWarnings<T>(fn: () => T): { warnings: string[]; result: T } {
+  const origWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map((a) => (typeof a === "string" ? a : String(a))).join(" "));
+  };
+  try {
+    const result = fn();
+    return { warnings, result };
+  } finally {
+    console.warn = origWarn;
+  }
+}
+
+const ORANGE_ANSI = "\x1b[38;5;208m";
+
+{
+  const { warnings } = captureWarnings(
+    () => new XmemoryClient({ url: "http://localhost:1", token: "legacy" }),
+  );
+  check("token option: emits exactly one warning", warnings.length === 1);
+  check("token option: warning mentions deprecation", warnings[0].toLowerCase().includes("deprecat"));
+  check("token option: warning mentions `apiKey`", warnings[0].includes("apiKey"));
+  check("token option: warning uses orange ANSI color", warnings[0].includes(ORANGE_ANSI));
+}
+
+// ---------------------------------------------------------------------------
+// Test: `apiKey` constructor option — no warning, sent as Bearer
+// ---------------------------------------------------------------------------
+
+{
+  const { warnings } = captureWarnings(
+    () => new XmemoryClient({ url: "http://localhost:1", apiKey: "modern" }),
+  );
+  check("apiKey option: no deprecation warning", warnings.length === 0);
+
+  let capturedAuth = "";
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    capturedAuth = ((init?.headers ?? {}) as Record<string, string>)["Authorization"] ?? "";
+    return { status: 200, body: { items: [] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "modern" });
+  await c.admin.listClusters();
+  check("apiKey option: sent as Bearer token", capturedAuth === "Bearer modern");
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: `apiKey` takes precedence over deprecated `token`
+// ---------------------------------------------------------------------------
+
+{
+  const { warnings } = captureWarnings(
+    () => new XmemoryClient({ url: "http://localhost:1", apiKey: "new", token: "old" }),
+  );
+  check("apiKey wins over token: no warning", warnings.length === 0);
+
+  let capturedAuth = "";
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    capturedAuth = ((init?.headers ?? {}) as Record<string, string>)["Authorization"] ?? "";
+    return { status: 200, body: { items: [] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "new", token: "old" });
+  await c.admin.listClusters();
+  check("apiKey wins over token: uses apiKey value", capturedAuth === "Bearer new");
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: env var `XMEM_AUTH_TOKEN` is deprecated; `XMEM_API_KEY` is the new name
+// ---------------------------------------------------------------------------
+
+async function withEnv<T>(
+  vars: Record<string, string | undefined>,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  const original: Record<string, string | undefined> = {};
+  for (const k of Object.keys(vars)) {
+    original[k] = process.env[k];
+    if (vars[k] === undefined) delete process.env[k];
+    else process.env[k] = vars[k];
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const k of Object.keys(original)) {
+      if (original[k] === undefined) delete process.env[k];
+      else process.env[k] = original[k];
+    }
+  }
+}
+
+{
+  const { warnings } = captureWarnings(() =>
+    withEnv(
+      { XMEM_API_KEY: undefined, XMEM_AUTH_TOKEN: "legacy-env" },
+      () => new XmemoryClient({ url: "http://localhost:1" }),
+    ),
+  );
+  check("XMEM_AUTH_TOKEN: emits one deprecation warning", warnings.length === 1);
+  check(
+    "XMEM_AUTH_TOKEN: warning mentions XMEM_API_KEY",
+    warnings[0].includes("XMEM_API_KEY"),
+  );
+  check("XMEM_AUTH_TOKEN: warning uses orange ANSI color", warnings[0].includes(ORANGE_ANSI));
+}
+
+{
+  const { warnings } = captureWarnings(() =>
+    withEnv(
+      { XMEM_API_KEY: "new-env", XMEM_AUTH_TOKEN: undefined },
+      () => new XmemoryClient({ url: "http://localhost:1" }),
+    ),
+  );
+  check("XMEM_API_KEY: no deprecation warning", warnings.length === 0);
+}
+
+{
+  // Both env vars set: API_KEY wins, no warning.
+  const { warnings } = captureWarnings(() =>
+    withEnv(
+      { XMEM_API_KEY: "new-env", XMEM_AUTH_TOKEN: "legacy-env" },
+      () => new XmemoryClient({ url: "http://localhost:1" }),
+    ),
+  );
+  check("XMEM_API_KEY beats XMEM_AUTH_TOKEN: no warning", warnings.length === 0);
+
+  let capturedAuth = "";
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    capturedAuth = ((init?.headers ?? {}) as Record<string, string>)["Authorization"] ?? "";
+    return { status: 200, body: { items: [] } };
+  });
+  await withEnv(
+    { XMEM_API_KEY: "new-env", XMEM_AUTH_TOKEN: "legacy-env" },
+    async () => {
+      const c = new XmemoryClient({ url: "http://localhost:1" });
+      await c.admin.listClusters();
+    },
+  );
+  check("XMEM_API_KEY beats XMEM_AUTH_TOKEN: uses new value", capturedAuth === "Bearer new-env");
   globalThis.fetch = origFetch;
 }
 
