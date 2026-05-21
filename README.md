@@ -124,7 +124,7 @@ const result = await inst.write("Bob is a designer based in Berlin.");
 console.log(result.write_id, result.trace_id);
 ```
 
-Options: `{ extractionLogic?, diffEngine?, timeoutMs? }` — `extractionLogic` defaults to `"deep"`.
+Options: `{ extractionLogic?, diffEngine?, timeoutMs? }` — `extractionLogic` defaults to `"fast"`.
 
 ### `inst.writeAsync(text, options?)` → `AsyncWriteResult`
 

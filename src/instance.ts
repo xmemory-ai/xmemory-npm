@@ -147,7 +147,7 @@ export class InstanceHandle {
   async write(text: string, options?: WriteOptions): Promise<WriteResult> {
     const body: Record<string, unknown> = {
       text,
-      extraction_logic: options?.extractionLogic ?? "deep",
+      extraction_logic: options?.extractionLogic ?? "fast",
     };
     if (options?.diffEngine != null) body.diff_engine = options.diffEngine;
     return this._requestOne<WriteResult>("POST", `/instances/${this.id}/write`, {
@@ -159,7 +159,7 @@ export class InstanceHandle {
   async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult> {
     const body: Record<string, unknown> = {
       text,
-      extraction_logic: options?.extractionLogic ?? "deep",
+      extraction_logic: options?.extractionLogic ?? "fast",
     };
     if (options?.diffEngine != null) body.diff_engine = options.diffEngine;
     return this._requestOne<AsyncWriteResult>("POST", `/instances/${this.id}/write_async`, {
@@ -178,7 +178,7 @@ export class InstanceHandle {
   async extract(text: string, options?: ExtractOptions): Promise<ExtractResult> {
     const body: Record<string, unknown> = {
       text,
-      extraction_logic: options?.extractionLogic ?? "deep",
+      extraction_logic: options?.extractionLogic ?? "fast",
     };
     return this._requestOne<ExtractResult>("POST", `/instances/${this.id}/extract`, {
       body,
