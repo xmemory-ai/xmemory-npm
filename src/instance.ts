@@ -3,7 +3,10 @@
  */
 
 import type {
+  ApplyPendingDecisionsResult,
   AsyncWriteResult,
+  DecideSuggestionsResult,
+  DecisionInput,
   ExtractOptions,
   ExtractResult,
   InstanceSchemaInfo,
@@ -12,6 +15,8 @@ import type {
   ReadResult,
   RequestOneFn,
   RequestOptions,
+  ReviewSuggestionsResult,
+  SuggestionRequestOptions,
   ToolDescription,
   ToolParameterDescription,
   WriteOptions,
@@ -188,6 +193,65 @@ export class InstanceHandle {
 
   async getSchema(options?: RequestOptions): Promise<InstanceSchemaInfo> {
     return this._requestOne<InstanceSchemaInfo>("GET", `/instances/${this.id}/schema`, {
+      timeoutMs: options?.timeoutMs,
+    });
+  }
+
+  // -- Schema evolution (suggestion engine) ---------------------------------
+
+  /**
+   * Return the current consolidated schema-improvement proposal (step 1).
+   *
+   * The result's `proposal.proposal_version` is the optimistic-concurrency
+   * token you pass to `decideSuggestions` / `applyPendingDecisions`. When
+   * `status === "evolution_in_progress"`, back off for `retry_after_seconds`
+   * and retry instead of blocking on the in-flight migration.
+   */
+  async reviewSuggestions(options?: SuggestionRequestOptions): Promise<ReviewSuggestionsResult> {
+    const body: Record<string, unknown> = {};
+    if (options?.sessionId != null) body.session_id = options.sessionId;
+    return this._requestOne<ReviewSuggestionsResult>("POST", `/instances/${this.id}/suggestions/review`, {
+      body,
+      timeoutMs: options?.timeoutMs,
+    });
+  }
+
+  /**
+   * Record accept/reject/defer decisions for proposal items, in bulk (step 2).
+   *
+   * `proposalVersion` must be the token from the latest `reviewSuggestions`; a
+   * stale token throws `XmemoryAPIError` with `code === "stale_proposal_version"`.
+   * The result's `next_proposal_version` can be passed straight to
+   * `applyPendingDecisions`.
+   */
+  async decideSuggestions(
+    proposalVersion: string,
+    decisions: DecisionInput[],
+    options?: SuggestionRequestOptions,
+  ): Promise<DecideSuggestionsResult> {
+    const body: Record<string, unknown> = { proposal_version: proposalVersion, decisions };
+    if (options?.sessionId != null) body.session_id = options.sessionId;
+    return this._requestOne<DecideSuggestionsResult>("POST", `/instances/${this.id}/suggestions/decide`, {
+      body,
+      timeoutMs: options?.timeoutMs,
+    });
+  }
+
+  /**
+   * Commit accepted decisions as a single migration (step 3).
+   *
+   * `status === "nothing_to_apply"` means no accepted items were left. A stale
+   * `proposalVersion` or an unmet dependency throws `XmemoryAPIError`
+   * (`code === "stale_proposal_version"` / `"dependency_closure_failed"`).
+   */
+  async applyPendingDecisions(
+    proposalVersion: string,
+    options?: SuggestionRequestOptions,
+  ): Promise<ApplyPendingDecisionsResult> {
+    const body: Record<string, unknown> = { proposal_version: proposalVersion };
+    if (options?.sessionId != null) body.session_id = options.sessionId;
+    return this._requestOne<ApplyPendingDecisionsResult>("POST", `/instances/${this.id}/suggestions/apply`, {
+      body,
       timeoutMs: options?.timeoutMs,
     });
   }

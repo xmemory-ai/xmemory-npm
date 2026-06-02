@@ -386,6 +386,167 @@ async function withEnv<T>(
 }
 
 // ---------------------------------------------------------------------------
+// Schema evolution — method presence
+// ---------------------------------------------------------------------------
+
+check("admin.enhanceSchema", typeof client.admin.enhanceSchema === "function");
+check("admin.dryRunMigration", typeof client.admin.dryRunMigration === "function");
+check("admin.listMigrations", typeof client.admin.listMigrations === "function");
+check("admin.getMigration", typeof client.admin.getMigration === "function");
+check("inst.reviewSuggestions", typeof inst.reviewSuggestions === "function");
+check("inst.decideSuggestions", typeof inst.decideSuggestions === "function");
+check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "function");
+
+// ---------------------------------------------------------------------------
+// Schema evolution — request-body mapping (camelCase opts -> snake_case wire)
+// ---------------------------------------------------------------------------
+
+{
+  let captured: { url: string; body: Record<string, unknown> | null } = { url: "", body: null };
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch((url, init) => {
+    captured = { url, body: init?.body ? JSON.parse(init.body as string) : null };
+    return { status: 200, body: { items: [{ id: "i", cluster_id: "c", name: "n", description: null }] } };
+  });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  await c.admin.updateInstanceSchema("inst-1", "objects: {}", SchemaType.YML, {
+    migrationPlan: { ops: [{ op_type: "remove_field", object_name: "P", field_name: "x" }] },
+    confirmDestructive: true,
+  });
+  const body = captured.body ?? {};
+  check("updateInstanceSchema sends migration_plan", "migration_plan" in body);
+  check("updateInstanceSchema sends confirm_destructive=true", body.confirm_destructive === true);
+  check(
+    "updateInstanceSchema plan keeps snake_case op",
+    JSON.stringify(body.migration_plan).includes("remove_field"),
+  );
+  globalThis.fetch = orig;
+}
+
+// ---------------------------------------------------------------------------
+// Schema evolution — enhanceSchema passes through the migration plan
+// ---------------------------------------------------------------------------
+
+{
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          data_schema: { objects: {} },
+          migration_plan: { ops: [{ op_type: "rename_field", object_name: "P", old_name: "a", new_name: "b" }] },
+          summary: "rename a to b",
+          warnings: [],
+          repair_log: [],
+        },
+      ],
+    },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const result = await c.admin.enhanceSchema("cluster-1", "rename a to b", "objects:\n  P: {}");
+  check("enhanceSchema returns migration_plan", result.migration_plan !== null);
+  check("enhanceSchema op type preserved", result.migration_plan?.ops[0]?.op_type === "rename_field");
+  check("enhanceSchema summary", result.summary === "rename a to b");
+  globalThis.fetch = orig;
+}
+
+// ---------------------------------------------------------------------------
+// Schema evolution — listMigrations query params + getMigration unwraps record
+// ---------------------------------------------------------------------------
+
+{
+  const record = {
+    id: "mig-1",
+    applied_at: "2026-06-01T12:00:00Z",
+    source: "suggestion_engine",
+    decided_by: null,
+    prior_version: 3,
+    new_version: 4,
+    ops: [],
+    ops_summary: { count_by_op_type: {}, total: 0 },
+    notes: null,
+    yaml_before: null,
+    yaml_after: null,
+  };
+  let listUrl = "";
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch((url) => {
+    listUrl = url;
+    if (url.includes("/migrations/mig-1")) {
+      return { status: 200, body: { items: [{ status: "ok", instance_id: "inst-1", record }] } };
+    }
+    return {
+      status: 200,
+      body: { items: [{ status: "ok", instance_id: "inst-1", items: [record], next_before_id: null, has_more: false }] },
+    };
+  });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const listed = await c.admin.listMigrations("inst-1", { limit: 10, includeYaml: false });
+  check("listMigrations returns items", listed.items.length === 1);
+  check("listMigrations limit param", listUrl.includes("limit=10"));
+  check("listMigrations include_yaml param", listUrl.includes("include_yaml=false"));
+  const got = await c.admin.getMigration("inst-1", "mig-1");
+  check("getMigration unwraps record", got.id === "mig-1" && got.new_version === 4);
+  globalThis.fetch = orig;
+}
+
+// ---------------------------------------------------------------------------
+// Schema evolution — decideSuggestions body + structured error code
+// ---------------------------------------------------------------------------
+
+{
+  let body: Record<string, unknown> | null = null;
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    body = init?.body ? JSON.parse(init.body as string) : null;
+    return {
+      status: 200,
+      body: {
+        items: [
+          { status: "ok", instance_id: "inst-1", decisions_recorded: [], warnings: [], next_proposal_version: "v2" },
+        ],
+      },
+    };
+  });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const decided = await c.instance("inst-1").decideSuggestions("v1", [
+    { item_fingerprint: "fp1", decision: "accept" },
+  ]);
+  check("decideSuggestions next_proposal_version", decided.next_proposal_version === "v2");
+  check("decideSuggestions sends proposal_version", (body ?? {}).proposal_version === "v1");
+  globalThis.fetch = orig;
+}
+
+{
+  // Structured schema-evolution error: error_type surfaces as `code`.
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 409,
+    body: {
+      status: "error",
+      error_type: "stale_proposal_version",
+      error_message: "Proposal version is stale.",
+      details: { current: "xyz" },
+    },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").applyPendingDecisions("old-token");
+    check("applyPendingDecisions throws on stale token", false);
+  } catch (e) {
+    check("applyPendingDecisions throws XmemoryAPIError", e instanceof XmemoryAPIError);
+    check("error code is stale_proposal_version", (e as XmemoryAPIError).code === "stale_proposal_version");
+    check("error status is 409", (e as XmemoryAPIError).status === 409);
+    check(
+      "error details preserved",
+      JSON.stringify((e as XmemoryAPIError).details) === JSON.stringify({ current: "xyz" }),
+    );
+  }
+  globalThis.fetch = orig;
+}
+
+// ---------------------------------------------------------------------------
 
 if (errors.length > 0) {
   console.error("FAIL:", errors.join(", "));

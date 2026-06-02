@@ -7,14 +7,23 @@ import {
   type ApiError,
   type ClusterInfo,
   type CreateInstanceOptions,
+  type DryRunMigrationOptions,
+  type DryRunResult,
+  type EnhanceSchemaResult,
   type GenerateSchemaOptions,
   type GenerateSchemaResult,
+  type GetMigrationOptions,
+  type GetMigrationResult,
   type InstanceInfo,
   type InstanceSchemaInfo,
   type InternalRequestOptions,
+  type ListMigrationsOptions,
+  type ListMigrationsResult,
+  type MigrationRecord,
   type RawApiResponse,
   type RequestOptions,
   type SchemaTypeValue,
+  type UpdateInstanceSchemaOptions,
   type XmemoryClientOptions,
   XmemoryAPIError,
   XmemoryHealthCheckError,
@@ -29,6 +38,37 @@ const RESET = "\x1b[0m";
 
 function deprecationWarning(message: string): void {
   console.warn(`${ORANGE}[xmemory] DEPRECATION: ${message}${RESET}`);
+}
+
+/**
+ * Pull a structured error out of an error body. Handles the schema-evolution
+ * shape (`{status: "error", error_type, error_message, details}`, where
+ * `error_type` is the code) and the standard `{errors: [{code, message}]}`
+ * envelope.
+ */
+function extractStructuredError(payload: unknown): {
+  code?: string;
+  message?: string;
+  details?: Record<string, unknown> | null;
+} {
+  if (typeof payload !== "object" || payload === null) return {};
+  const p = payload as Record<string, unknown>;
+  if (p.status === "error" && typeof p.error_type === "string") {
+    return {
+      code: p.error_type,
+      message: typeof p.error_message === "string" ? p.error_message : undefined,
+      details: (p.details ?? null) as Record<string, unknown> | null,
+    };
+  }
+  const errors = p.errors;
+  if (Array.isArray(errors) && errors.length > 0 && typeof errors[0] === "object" && errors[0] !== null) {
+    const first = errors[0] as Record<string, unknown>;
+    return {
+      code: typeof first.code === "string" ? first.code : undefined,
+      message: typeof first.message === "string" ? first.message : undefined,
+    };
+  }
+  return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -53,7 +93,7 @@ export interface AdminNamespace {
     instanceId: string,
     schemaText: string,
     schemaType: SchemaTypeValue,
-    options?: RequestOptions,
+    options?: UpdateInstanceSchemaOptions,
   ): Promise<InstanceInfo>;
   updateInstanceMetadata(
     instanceId: string,
@@ -66,6 +106,20 @@ export interface AdminNamespace {
     schemaDescription: string,
     options?: GenerateSchemaOptions,
   ): Promise<GenerateSchemaResult>;
+  enhanceSchema(
+    clusterId: string,
+    schemaDescription: string,
+    currentYmlSchema: string,
+    options?: RequestOptions,
+  ): Promise<EnhanceSchemaResult>;
+  dryRunMigration(
+    instanceId: string,
+    schemaText: string,
+    schemaType: SchemaTypeValue,
+    options?: DryRunMigrationOptions,
+  ): Promise<DryRunResult>;
+  listMigrations(instanceId: string, options?: ListMigrationsOptions): Promise<ListMigrationsResult>;
+  getMigration(instanceId: string, migrationId: string, options?: GetMigrationOptions): Promise<MigrationRecord>;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,18 +252,20 @@ export class XmemoryClient {
     }
 
     if (!res.ok) {
+      const structured = extractStructuredError(payload);
       const msg =
-        typeof payload === "object" && payload !== null && "message" in payload
+        structured.message ??
+        (typeof payload === "object" && payload !== null && "message" in payload
           ? String((payload as { message: string }).message)
-          : raw.slice(0, 200);
-      throw new XmemoryAPIError(`HTTP ${res.status}: ${msg}`, res.status);
+          : raw.slice(0, 200));
+      throw new XmemoryAPIError(`HTTP ${res.status}: ${msg}`, res.status, structured.code, structured.details);
     }
 
     const response = payload as RawApiResponse;
 
     if (response.errors?.length) {
       const first: ApiError = response.errors[0];
-      throw new XmemoryAPIError(`API error: ${first.message} (${first.code})`, res.status);
+      throw new XmemoryAPIError(`API error: ${first.message} (${first.code})`, res.status, first.code);
     }
 
     return response;
@@ -292,8 +348,13 @@ export class XmemoryClient {
       },
 
       updateInstanceSchema: async (instanceId, schemaText, schemaType, options?) => {
+        const body: Record<string, unknown> = {
+          instance_schema: buildInstanceSchema(schemaText, schemaType),
+        };
+        if (options?.migrationPlan != null) body.migration_plan = options.migrationPlan;
+        if (options?.confirmDestructive != null) body.confirm_destructive = options.confirmDestructive;
         return this._requestOne<InstanceInfo>("PUT", `/instances/${instanceId}/schema`, {
-          body: { instance_schema: buildInstanceSchema(schemaText, schemaType) },
+          body,
           timeoutMs: options?.timeoutMs,
         });
       },
@@ -313,6 +374,50 @@ export class XmemoryClient {
           `/clusters/${clusterId}/instances/generate_schema`,
           { body, timeoutMs: options?.timeoutMs },
         );
+      },
+
+      enhanceSchema: async (clusterId, schemaDescription, currentYmlSchema, options?) => {
+        return this._requestOne<EnhanceSchemaResult>(
+          "POST",
+          `/clusters/${clusterId}/instances/generate_schema`,
+          {
+            body: { schema_description: schemaDescription, current_yml_schema: currentYmlSchema },
+            timeoutMs: options?.timeoutMs,
+          },
+        );
+      },
+
+      dryRunMigration: async (instanceId, schemaText, schemaType, options?) => {
+        const body: Record<string, unknown> = {
+          instance_schema: buildInstanceSchema(schemaText, schemaType),
+        };
+        if (options?.migrationPlan != null) body.migration_plan = options.migrationPlan;
+        if (options?.confirmDestructive != null) body.confirm_destructive = options.confirmDestructive;
+        return this._requestOne<DryRunResult>("POST", `/instances/${instanceId}/migrations/dry_run`, {
+          body,
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      listMigrations: async (instanceId, options?) => {
+        const params: Record<string, string> = {
+          limit: String(options?.limit ?? 50),
+          include_yaml: String(options?.includeYaml ?? false),
+        };
+        if (options?.beforeId != null) params.before_id = options.beforeId;
+        return this._requestOne<ListMigrationsResult>("GET", `/instances/${instanceId}/migrations`, {
+          params,
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      getMigration: async (instanceId, migrationId, options?) => {
+        const result = await this._requestOne<GetMigrationResult>(
+          "GET",
+          `/instances/${instanceId}/migrations/${migrationId}`,
+          { params: { include_yaml: String(options?.includeYaml ?? false) }, timeoutMs: options?.timeoutMs },
+        );
+        return result.record;
       },
     };
   }

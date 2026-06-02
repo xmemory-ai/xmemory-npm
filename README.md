@@ -183,6 +183,109 @@ const tools = desc.asOpenaiTools();      // OpenAI function-calling format
 
 Results are cached for 5 minutes. Call `inst.clearDescribeCache()` to force a refresh.
 
+## Schema evolution
+
+Schemas can change after creation. xmemory supports **safe, data-preserving
+migrations** (rename / remove / type change) driven by structured migration
+ops, plus a **suggestion engine** that proposes improvements from real read
+traffic. This is purely additive — existing methods are unchanged.
+
+See the [Schema evolution section of the API reference](https://xmemory.ai/api/#schema-evolution)
+for the conceptual model, and the [TypeScript guide](https://xmemory.ai/typescript/)
+for full walkthroughs.
+
+### Suggestion-engine flow (review → decide → apply)
+
+The engine surfaces a single rolling proposal per instance. The minimum flow is
+three calls — review, decide (in bulk), apply:
+
+```typescript
+import { XmemoryClient, type DecisionInput } from "xmemory";
+
+const xm = new XmemoryClient({ apiKey: "..." });
+const inst = xm.instance("<instance-id>");
+
+// 1. Review — get the proposal + its concurrency token.
+const review = await inst.reviewSuggestions();
+if (review.status === "evolution_in_progress") {
+  console.log(`A migration is in flight; retry in ${review.retry_after_seconds}s`);
+} else if (review.proposal) {
+  const proposal = review.proposal;
+  for (const item of proposal.items) {
+    console.log(item.item_fingerprint, item.rationale, item.op);
+  }
+
+  // 2. Decide — accept / reject / defer per item, in one batch.
+  const decisions: DecisionInput[] = proposal.items.map((item) => ({
+    item_fingerprint: item.item_fingerprint,
+    decision: "accept",
+  }));
+  const decided = await inst.decideSuggestions(proposal.proposal_version, decisions);
+
+  // 3. Apply — commit accepted decisions as one migration.
+  const applied = await inst.applyPendingDecisions(decided.next_proposal_version);
+  console.log(applied.status, applied.summary); // e.g. "ok" "added 1 field"
+}
+```
+
+When `status === "evolution_in_progress"`, back off for `retry_after_seconds`
+and retry instead of blocking.
+
+### Direct migration flow (enhance → dry-run → update)
+
+Drive a migration yourself — ask the server to *enhance* the current schema,
+preview the DDL, then apply it:
+
+```typescript
+import { XmemoryClient, SchemaType } from "xmemory";
+import yaml from "js-yaml";
+
+const xm = new XmemoryClient({ apiKey: "..." });
+const current = (await xm.admin.getInstanceSchema("<instance-id>")).data_schema;
+
+// 1. Enhance — new schema + an executor-ready migration plan.
+const enhanced = await xm.admin.enhanceSchema(
+  "<cluster-id>",
+  "Rename Person.mail to Person.email.",
+  yaml.dump(current),
+);
+console.log(enhanced.summary, enhanced.migration_plan?.ops);
+
+const newYaml = yaml.dump(enhanced.data_schema);
+
+// 2. Dry-run — preview the DDL without applying anything.
+const preview = await xm.admin.dryRunMigration("<instance-id>", newYaml, SchemaType.YML, {
+  migrationPlan: enhanced.migration_plan ?? undefined,
+});
+console.log(preview.statements);
+
+// 3. Update — apply. confirmDestructive is required for ops that drop data.
+const info = await xm.admin.updateInstanceSchema("<instance-id>", newYaml, SchemaType.YML, {
+  migrationPlan: enhanced.migration_plan ?? undefined,
+  confirmDestructive: false,
+});
+console.log(info.migration_id, info.prior_version, "->", info.new_version);
+```
+
+### Migration history
+
+```typescript
+const page = await xm.admin.listMigrations("<instance-id>", { limit: 20 });
+for (const record of page.items) {
+  console.log(record.id, record.source, record.prior_version, "->", record.new_version);
+}
+
+const detail = await xm.admin.getMigration("<instance-id>", "<migration-id>", { includeYaml: true });
+console.log(detail.yaml_before, detail.yaml_after);
+```
+
+Migration ops are exported as discriminated-union types (`MigrationPlan`,
+`MigrationOp`, `AddField`, `RenameField`, `RemoveObject`, …) keyed on `op_type`.
+`ProposalItem.op` and `MigrationRecord.ops` are raw dicts for forward
+compatibility — narrow them to `MigrationOp` when needed.
+
+Runnable end-to-end examples live in [`examples/`](examples/).
+
 ## Error handling
 
 All errors throw `XmemoryAPIError`. Health check failures throw `XmemoryHealthCheckError` (a subclass).
@@ -203,6 +306,23 @@ try {
 } catch (e) {
   if (e instanceof XmemoryAPIError) {
     console.error(`API error (HTTP ${e.status}): ${e.message}`);
+  }
+}
+```
+
+`XmemoryAPIError` carries `status` (HTTP status), `code` (structured error code,
+when the server returned one), and `details`. The schema-evolution endpoints
+return codes you can pattern match on via `.code` — for example
+`stale_proposal_version`, `dependency_closure_failed`,
+`destructive_confirmation_required`, `non_additive_change_requires_plan`,
+`stale_schema_version`, `migration_not_found`, `instance_not_initialised`:
+
+```typescript
+try {
+  await inst.applyPendingDecisions(token);
+} catch (e) {
+  if (e instanceof XmemoryAPIError && e.code === "stale_proposal_version") {
+    const review = await inst.reviewSuggestions(); // re-review and retry
   }
 }
 ```
