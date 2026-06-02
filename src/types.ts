@@ -14,6 +14,11 @@ export type ReadMode = "single-answer" | "raw-tables" | "xresponse";
 export type WriteQueueStatus =
   | "queued"
   | "processing"
+  // Two-phase pipeline in-progress states (server returns these when the
+  // parallel-extraction path is enabled). All non-terminal — keep polling.
+  | "extracting"
+  | "extracted"
+  | "applying"
   | "completed"
   | "failed"
   | "not_found";

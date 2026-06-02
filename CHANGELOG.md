@@ -2,6 +2,15 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 2.2.1
+
+### Fixed
+
+- `WriteQueueStatus` now includes the two-phase write-pipeline statuses
+  `extracting`, `extracted`, and `applying`, which the server returns when the
+  parallel-extraction pipeline is enabled. They are non-terminal (in-progress)
+  states — keep polling until `completed` / `failed`.
+
 ## 2.2.0
 
 Adds the **schema-evolution** surface. This release is purely additive —
