@@ -91,7 +91,6 @@ export interface WriteResult {
   readonly write_id: string;
   readonly trace_id: string | null;
   readonly cleaned_objects: unknown;
-  readonly diff_plan: unknown;
 }
 
 export interface AsyncWriteResult {
