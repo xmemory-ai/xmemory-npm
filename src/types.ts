@@ -11,6 +11,27 @@ export type SchemaTypeValue = (typeof SchemaType)[keyof typeof SchemaType];
 
 export type ExtractionLogic = "fast" | "regular" | "deep";
 export type ReadMode = "single-answer" | "raw-tables" | "xresponse";
+
+/**
+ * One concrete object a scoped read may touch. Identify it by `type` (PascalCase
+ * class name or snake_case table name) plus EITHER its `xuid` OR its user-defined
+ * primary key (`key`: a mapping of primary-key field name to value).
+ */
+export interface ScopeObject {
+  type: string;
+  xuid?: string;
+  key?: Record<string, string | number | boolean>;
+}
+
+/**
+ * A read's scope: the concrete `objects` it may touch, plus relation opt-in.
+ * `includeRelations` (off by default) also exposes relations among them.
+ */
+export interface ReadScope {
+  objects: ScopeObject[];
+  includeRelations?: boolean;
+}
+
 export type WriteQueueStatus =
   | "queued"
   | "processing"
@@ -426,6 +447,8 @@ export interface RequestOptions {
 
 export interface ReadOptions {
   readMode?: ReadMode;
+  /** Restrict the read to a set of concrete objects (plus optional relation traversal). */
+  scope?: ReadScope;
   traceId?: string;
   timeoutMs?: number;
 }
