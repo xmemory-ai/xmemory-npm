@@ -26,6 +26,9 @@ export type {
   MigrationSource,
 } from "./types.js";
 
+// Scope
+export type { ScopeObject, ReadScope } from "./types.js";
+
 // Options
 export type {
   XmemoryClientOptions,

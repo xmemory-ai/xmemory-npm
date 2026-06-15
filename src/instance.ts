@@ -142,6 +142,12 @@ export class InstanceHandle {
       query,
       mode: options?.readMode ?? "single-answer",
     };
+    if (options?.scope != null) {
+      body.scope = {
+        objects: options.scope.objects,
+        include_relations: options.scope.includeRelations ?? false,
+      };
+    }
     if (options?.traceId != null) body.trace_id = options.traceId;
     return this._requestOne<ReadResult>("POST", `/instances/${this.id}/read`, {
       body,
