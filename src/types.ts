@@ -23,13 +23,17 @@ export interface ScopeObject {
   key?: Record<string, string | number | boolean>;
 }
 
+/** Which relations a scoped read may traverse. */
+export type RelationsScope = "no_relations" | "all_relations";
+
 /**
- * A read's scope: the concrete `objects` it may touch, plus relation opt-in.
- * `includeRelations` (off by default) also exposes relations among them.
+ * A read's scope: the concrete `objects` it may touch, plus relation policy.
+ * `relationsScope` is `no_relations` (objects only) by default; `all_relations`
+ * also exposes the relations among the in-scope `objects`.
  */
 export interface ReadScope {
   objects: ScopeObject[];
-  includeRelations?: boolean;
+  relationsScope?: RelationsScope;
 }
 
 export type WriteQueueStatus =
