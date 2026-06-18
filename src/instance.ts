@@ -143,12 +143,12 @@ export class InstanceHandle {
       mode: options?.readMode ?? "single-answer",
     };
     if (options?.scope != null) {
-      // Serialize to the API's identity-ADT wire shape: each object is
-      // `{type, key: {xuid}}` or `{type, key: {key: {...}}}`, plus `relations_scope`.
+      // Serialize to the API's identity wire shape: each object is
+      // `{type, key: {key: {...}}}` (by user-defined primary key), plus `relations_scope`.
       body.scope = {
         objects: options.scope.objects.map((o) => ({
           type: o.type,
-          key: o.xuid != null ? { xuid: o.xuid } : { key: o.key },
+          key: { key: o.key },
         })),
         relations_scope: options.scope.relationsScope ?? "no_relations",
       };
