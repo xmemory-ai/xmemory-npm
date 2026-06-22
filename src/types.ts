@@ -428,6 +428,7 @@ export interface ToolDescription {
 export interface RawDescribeResult {
   readonly instance_id: string;
   readonly instance_name: string;
+  readonly about?: string;
   readonly schema_summary: string;
   readonly tools: ToolDescription[];
 }
