@@ -2,6 +2,24 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 2.3.0
+
+Adds **scoped reads**. This release is purely additive — existing methods are
+unchanged and older callers keep working.
+
+### Added — instance (`xm.instance(id)`)
+
+- `read(query, options?)` now accepts an optional `scope` that restricts the
+  read to a set of concrete objects. Each `ScopeObject` is identified by its
+  `type` (PascalCase class name / snake_case table name) plus its user-defined
+  primary `key`. `relationsScope` controls relation traversal —
+  `"no_relations"` (default, objects only) or `"all_relations"` (also exposes
+  the relations among the in-scope objects).
+
+### Added — types (exported from `xmemory`)
+
+- `ReadScope`, `ScopeObject`, and `RelationsScope`.
+
 ## 2.2.1
 
 ### Fixed
