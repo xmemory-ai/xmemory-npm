@@ -152,7 +152,34 @@ const result = await inst.read("Who is on the team?");
 console.log(result.reader_result);
 ```
 
-Options: `{ readMode?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
+Options: `{ readMode?, scope?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
+
+#### Scoped reads
+
+By default a read may draw on the whole instance. Pass a `scope` to restrict it
+to a set of concrete objects — useful for grounding an answer in exactly the
+records you care about, or for keeping a per-user / per-entity read from leaking
+into unrelated data.
+
+Each object in the scope is identified by its `type` (the PascalCase class name
+or snake_case table name) plus its user-defined primary `key` (a mapping of
+primary-key field name to value):
+
+```typescript
+const result = await inst.read("What do we know about these people?", {
+  scope: {
+    objects: [
+      { type: "Person", key: { full_name: "Alice Smith" } },
+      { type: "Person", key: { full_name: "Bob Jones" } },
+    ],
+    relationsScope: "all_relations", // default: "no_relations"
+  },
+});
+```
+
+`relationsScope` controls relation traversal: `"no_relations"` (the default)
+restricts the read to the listed objects only, while `"all_relations"` also
+exposes the relations among the in-scope objects.
 
 ### `inst.extract(text, options?)` → `ExtractResult`
 
