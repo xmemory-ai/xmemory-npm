@@ -114,7 +114,8 @@ export interface ReadResult {
 export interface WriteResult {
   readonly write_id: string;
   readonly trace_id: string | null;
-  readonly cleaned_objects: unknown;
+  /** What the write did, grouped into `created` / `updated` / `removed`. */
+  readonly changes: unknown;
 }
 
 export interface AsyncWriteResult {

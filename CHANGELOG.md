@@ -2,6 +2,22 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.0.0
+
+Replaces the legacy `cleaned_objects` echo on the write response with the new
+`changes` summary. **Breaking:** `WriteResult.cleaned_objects` is removed.
+
+### Added
+
+- `WriteResult.changes` — the write response's summary of what the write did,
+  grouped into `created` / `updated` / `removed`.
+
+### Removed
+
+- `WriteResult.cleaned_objects` — superseded by `changes`. The server still
+  returns the field to direct/SDK callers, but it is no longer typed or
+  surfaced; read `changes` instead.
+
 ## 2.3.1
 
 ### Added
