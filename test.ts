@@ -547,6 +547,60 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
 }
 
 // ---------------------------------------------------------------------------
+// Test: describe() surfaces the first-party `about` field
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url) => {
+    if (url.endsWith("/describe")) {
+      return {
+        status: 200,
+        body: {
+          items: [
+            {
+              instance_id: "test-inst",
+              instance_name: "Test Instance",
+              about: "xmemory is a first-party memory store.",
+              schema_summary: "",
+              tools: [],
+            },
+          ],
+        },
+      };
+    }
+    return { status: 200, body: { items: [] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const result = await c.instance("test-inst").describe();
+  check("describe: about parsed", result.about === "xmemory is a first-party memory store.");
+  check("describe: about in asText", result.asText().includes("xmemory is a first-party memory store."));
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: describe() about defaults to "" when an older server omits it
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => {
+    return {
+      status: 200,
+      body: { items: [{ instance_id: "i", instance_name: "n", schema_summary: "", tools: [] }] },
+    };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const result = await c.instance("i").describe();
+  check("describe: about defaults to empty when absent", result.about === "");
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
 
 if (errors.length > 0) {
   console.error("FAIL:", errors.join(", "));

@@ -2,6 +2,14 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 2.3.1
+
+### Added
+
+- `DescribeResult.about` — the describe endpoint's first-party-positioning
+  string is now parsed and exposed, and surfaced in `asText()`. Defaults to
+  `""` when an older server omits it.
+
 ## 2.3.0
 
 Adds **scoped reads**. This release is purely additive — existing methods are

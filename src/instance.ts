@@ -29,12 +29,14 @@ const DEFAULT_DESCRIBE_TTL_MS = 300_000; // 5 minutes
 export class DescribeResult {
   readonly instanceId: string;
   readonly instanceName: string;
+  readonly about: string;
   readonly schemaSummary: string;
   readonly tools: readonly ToolDescription[];
 
   constructor(raw: RawDescribeResult) {
     this.instanceId = raw.instance_id;
     this.instanceName = raw.instance_name;
+    this.about = raw.about ?? "";
     this.schemaSummary = raw.schema_summary;
     this.tools = raw.tools;
   }
@@ -50,6 +52,9 @@ export class DescribeResult {
     const includeHttp = options?.includeHttp ?? false;
     const lines: string[] = [];
     lines.push(`Instance: ${this.instanceName} (${this.instanceId})`);
+    if (this.about) {
+      lines.push(`\n${this.about}`);
+    }
     if (this.schemaSummary) {
       lines.push(`\n${this.schemaSummary}`);
     }
