@@ -114,7 +114,7 @@ export interface ReadResult {
 export interface WriteResult {
   readonly write_id: string;
   readonly trace_id: string | null;
-  /** What the write did, grouped into `created` / `updated` / `removed`. */
+  /** What the write did, grouped into `created` / `updated` / `deleted`. */
   readonly changes: unknown;
 }
 

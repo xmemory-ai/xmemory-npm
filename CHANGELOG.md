@@ -10,7 +10,7 @@ Replaces the legacy `cleaned_objects` echo on the write response with the new
 ### Added
 
 - `WriteResult.changes` — the write response's summary of what the write did,
-  grouped into `created` / `updated` / `removed`.
+  grouped into `created` / `updated` / `deleted`.
 
 ### Removed
 
