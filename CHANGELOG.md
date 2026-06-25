@@ -17,6 +17,9 @@ Replaces the legacy `cleaned_objects` echo on the write response with the new
 - `WriteResult.cleaned_objects` — superseded by `changes`. The server still
   returns the field to direct/SDK callers, but it is no longer typed or
   surfaced; read `changes` instead.
+- `"regular"` from the `ExtractionLogic` type — the server no longer supports
+  the regular extraction mode. `ExtractionLogic` is now `"fast" | "deep"`, and
+  `extractionLogic` continues to default to `"fast"`.
 
 ## 2.3.1
 
