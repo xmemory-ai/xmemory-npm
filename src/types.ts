@@ -9,7 +9,7 @@
 export const SchemaType = { YML: 0, JSON: 1 } as const;
 export type SchemaTypeValue = (typeof SchemaType)[keyof typeof SchemaType];
 
-export type ExtractionLogic = "fast" | "regular" | "deep";
+export type ExtractionLogic = "fast" | "deep";
 export type ReadMode = "single-answer" | "raw-tables" | "xresponse";
 
 /**
