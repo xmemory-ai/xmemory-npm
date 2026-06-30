@@ -339,9 +339,54 @@ try {
 ```
 
 `XmemoryAPIError` carries `status` (HTTP status), `code` (structured error code,
-when the server returned one), and `details`. The schema-evolution endpoints
-return codes you can pattern match on via `.code` — for example
-`stale_proposal_version`, `dependency_closure_failed`,
+when the server returned one), `details` (an optional structured payload), and
+`retryAfter` (the `Retry-After` header in seconds, when the server sent one).
+
+**Branch on `code`, not on the bare HTTP status** — the same status can mean
+different things. In particular HTTP `402 Payment Required` is now overloaded:
+
+| HTTP | `code`            | Meaning                                              | Retryable?                         |
+| ---- | ----------------- | ---------------------------------------------------- | ---------------------------------- |
+| 402  | `QUOTA_EXCEEDED`  | Tenant exhausted its plan/usage allowance (a daily or monthly token quota). | **No.** Wait for the window to reset. |
+| 402  | `TRIAL_ENDED`     | Trial over / subscription lapsed.                    | **No.** Needs a plan change.       |
+| 429  | `RATE_LIMITED`    | Genuine velocity / rate limit.                       | **Yes**, with backoff.             |
+
+For `QUOTA_EXCEEDED`, `details` carries `kind`
+(`"daily_quota_exceeded"` | `"monthly_quota_exceeded"`) and
+`retry_after_seconds` (`number | null`); when the window is resettable the
+server also sends a `Retry-After` header, surfaced as `retryAfter` (seconds).
+`TRIAL_ENDED` may carry `details.kind === "trial_exceeded"` or no details.
+`RATE_LIMITED` is retryable — honour `retryAfter` (or `Retry-After`) for backoff.
+The client never retries on its own; it only surfaces the value.
+
+```typescript
+try {
+  await inst.write("...");
+} catch (e) {
+  if (!(e instanceof XmemoryAPIError)) throw e;
+  switch (e.code) {
+    case "QUOTA_EXCEEDED": {
+      // Non-retryable: plan/usage allowance exhausted.
+      const kind = (e.details as { kind?: string } | null)?.kind; // daily_ | monthly_quota_exceeded
+      console.error(`Quota exhausted (${kind}); resets in ${e.retryAfter ?? "?"}s`);
+      break;
+    }
+    case "TRIAL_ENDED":
+      // Non-retryable: trial over / subscription lapsed — upgrade required.
+      console.error("Trial ended — upgrade the plan.");
+      break;
+    case "RATE_LIMITED":
+      // Retryable: back off and retry, honouring Retry-After.
+      console.error(`Rate limited; retry after ${e.retryAfter ?? "a short delay"}s`);
+      break;
+    default:
+      console.error(`API error (HTTP ${e.status}, code ${e.code}): ${e.message}`);
+  }
+}
+```
+
+The schema-evolution endpoints return codes you can pattern match on via `.code`
+the same way — for example `stale_proposal_version`, `dependency_closure_failed`,
 `destructive_confirmation_required`, `non_additive_change_requires_plan`,
 `stale_schema_version`, `migration_not_found`, `instance_not_initialised`:
 
