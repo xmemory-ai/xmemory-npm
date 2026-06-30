@@ -2,6 +2,11 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.1.1
+
+Documentation-only release: rebrands the package name casing from `Xmemory` to
+`xmemory` across the README and `AGENTS.md`. No API or behavior changes.
+
 ## 3.1.0
 
 Surfaces the HTTP `Retry-After` response header and documents the new accounts
