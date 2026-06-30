@@ -1,6 +1,6 @@
 # xmemory
 
-TypeScript/JavaScript client library for the [Xmemory](https://xmemory.ai) API.
+TypeScript/JavaScript client library for the [xmemory](https://xmemory.ai) API.
 
 ## Installation
 
@@ -30,7 +30,7 @@ console.log(result.reader_result);
 
 | Parameter   | Env var          | Default                   | Description                             |
 |-------------|------------------|---------------------------|-----------------------------------------|
-| `url`       | `XMEM_API_URL`   | `https://api.xmemory.ai`  | Base URL of the Xmemory API             |
+| `url`       | `XMEM_API_URL`   | `https://api.xmemory.ai`  | Base URL of the xmemory API             |
 | `apiKey`    | `XMEM_API_KEY`   | `undefined`               | Bearer API key for authentication       |
 | `timeoutMs` | —                | `60000`                   | Default request timeout in milliseconds |
 
