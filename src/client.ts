@@ -66,9 +66,27 @@ function extractStructuredError(payload: unknown): {
     return {
       code: typeof first.code === "string" ? first.code : undefined,
       message: typeof first.message === "string" ? first.message : undefined,
+      details: (first.details ?? null) as Record<string, unknown> | null,
     };
   }
   return {};
+}
+
+/**
+ * Parse the HTTP `Retry-After` response header into a number of seconds, or
+ * `undefined` when the header is absent or unparseable. Supports both the
+ * delta-seconds form (`Retry-After: 30`) and the HTTP-date form; HTTP-dates
+ * are converted to a non-negative second offset from now.
+ */
+function parseRetryAfter(res: Response): number | undefined {
+  const raw = res.headers.get("Retry-After");
+  if (raw == null) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const dateMs = Date.parse(trimmed);
+  if (Number.isNaN(dateMs)) return undefined;
+  return Math.max(0, Math.round((dateMs - Date.now()) / 1000));
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +276,13 @@ export class XmemoryClient {
         (typeof payload === "object" && payload !== null && "message" in payload
           ? String((payload as { message: string }).message)
           : raw.slice(0, 200));
-      throw new XmemoryAPIError(`HTTP ${res.status}: ${msg}`, res.status, structured.code, structured.details);
+      throw new XmemoryAPIError(
+        `HTTP ${res.status}: ${msg}`,
+        res.status,
+        structured.code,
+        structured.details,
+        parseRetryAfter(res),
+      );
     }
 
     const response = payload as RawApiResponse;

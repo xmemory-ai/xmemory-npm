@@ -56,14 +56,33 @@ export class XmemoryAPIError extends Error {
     message: string,
     public readonly status?: number,
     /**
-     * Structured error code when the server returned one. For the
+     * Structured error code when the server returned one. **Branch on this,
+     * not on the bare HTTP `status`** — the same status can mean different
+     * things. HTTP 402 carries either `"QUOTA_EXCEEDED"` (plan/usage allowance
+     * exhausted — non-retryable) or `"TRIAL_ENDED"` (trial over / subscription
+     * lapsed — non-retryable); HTTP 429 carries `"RATE_LIMITED"` (genuine
+     * velocity limit — retryable with backoff, honour `retryAfter`). For the
      * schema-evolution endpoints this is the `error_type` discriminator
      * (e.g. `"stale_proposal_version"`, `"destructive_confirmation_required"`).
      * Pattern match on this instead of parsing the message.
      */
     public readonly code?: string,
-    /** Optional structured `details` payload attached to some errors. */
+    /**
+     * Optional structured `details` payload attached to some errors. For
+     * `"QUOTA_EXCEEDED"` this carries `kind`
+     * (`"daily_quota_exceeded"` | `"monthly_quota_exceeded"`) and
+     * `retry_after_seconds` (`number | null`); `"TRIAL_ENDED"` may carry
+     * `kind: "trial_exceeded"` or no details at all.
+     */
     public readonly details?: Record<string, unknown> | null,
+    /**
+     * The HTTP `Retry-After` response header, in seconds, when the server sent
+     * one — e.g. on `429 RATE_LIMITED`, or a resettable `402 QUOTA_EXCEEDED`.
+     * This is the transport-level header value; for quota errors the same hint
+     * may also appear as `details.retry_after_seconds`. Surfaced for callers
+     * that implement their own backoff — the client does not retry on its own.
+     */
+    public readonly retryAfter?: number,
   ) {
     super(message);
     this.name = "XmemoryAPIError";

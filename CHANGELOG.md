@@ -2,6 +2,33 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.1.0
+
+Surfaces the HTTP `Retry-After` response header and documents the new accounts
+error contract. This release is purely additive — existing callers are
+unaffected.
+
+### Added
+
+- `XmemoryAPIError.retryAfter` — the `Retry-After` response header, parsed into
+  a number of seconds, when the server sent one (e.g. on `429 RATE_LIMITED`, or
+  a resettable `402 QUOTA_EXCEEDED`). Both the delta-seconds and HTTP-date forms
+  are accepted. Surfaced only; the client does **not** retry on its own.
+
+### Changed (backwards-compatible)
+
+- The structured-error extractor now passes `details` through for the
+  `{"errors":[{"code","message","details"}]}` envelope too (previously only the
+  schema-evolution error shape carried `details`). This makes `XmemoryAPIError.details`
+  available for the accounts errors below.
+- Documented the new accounts error contract in the README and on
+  `XmemoryAPIError.code`/`.details`: **branch on `code`, not the bare HTTP
+  status.** HTTP `402` is overloaded — `QUOTA_EXCEEDED` (plan/usage allowance
+  exhausted; non-retryable; `details.kind` is
+  `daily_quota_exceeded`|`monthly_quota_exceeded` with `retry_after_seconds`)
+  vs `TRIAL_ENDED` (trial over / subscription lapsed; non-retryable). HTTP `429`
+  `RATE_LIMITED` is the genuine, retryable velocity limit (honour `retryAfter`).
+
 ## 3.0.0
 
 Replaces the legacy `cleaned_objects` echo on the write response with the new

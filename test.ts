@@ -75,13 +75,18 @@ try {
 
 type FetchFn = typeof globalThis.fetch;
 
-function mockFetch(handler: (url: string, init?: RequestInit) => { status: number; body: unknown }): FetchFn {
+function mockFetch(
+  handler: (
+    url: string,
+    init?: RequestInit,
+  ) => { status: number; body: unknown; headers?: Record<string, string> },
+): FetchFn {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-    const { status, body } = handler(url, init);
+    const { status, body, headers } = handler(url, init);
     return new Response(JSON.stringify(body), {
       status,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(headers ?? {}) },
     });
   }) as FetchFn;
 }
@@ -542,6 +547,137 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
       "error details preserved",
       JSON.stringify((e as XmemoryAPIError).details) === JSON.stringify({ current: "xyz" }),
     );
+  }
+  globalThis.fetch = orig;
+}
+
+// ---------------------------------------------------------------------------
+// Accounts error contract — discriminate on `code`, not the bare HTTP status.
+// ---------------------------------------------------------------------------
+
+{
+  // 402 QUOTA_EXCEEDED — non-retryable quota exhaustion. details carries
+  // kind + retry_after_seconds, and the transport surfaces the HTTP
+  // Retry-After header as `retryAfter`.
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 402,
+    headers: { "Retry-After": "3600" },
+    body: {
+      errors: [
+        {
+          code: "QUOTA_EXCEEDED",
+          message: "Daily token quota exhausted.",
+          details: { kind: "daily_quota_exceeded", retry_after_seconds: 3600 },
+        },
+      ],
+    },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").read("anything");
+    check("QUOTA_EXCEEDED throws", false);
+  } catch (e) {
+    const err = e as XmemoryAPIError;
+    check("QUOTA_EXCEEDED throws XmemoryAPIError", e instanceof XmemoryAPIError);
+    check("QUOTA_EXCEEDED status is 402", err.status === 402);
+    check("QUOTA_EXCEEDED code surfaces", err.code === "QUOTA_EXCEEDED");
+    const details = err.details as { kind?: string; retry_after_seconds?: number } | null;
+    check("QUOTA_EXCEEDED details.kind surfaces", details?.kind === "daily_quota_exceeded");
+    check(
+      "QUOTA_EXCEEDED details.retry_after_seconds surfaces",
+      details?.retry_after_seconds === 3600,
+    );
+    check("QUOTA_EXCEEDED retryAfter from header", err.retryAfter === 3600);
+  }
+  globalThis.fetch = orig;
+}
+
+{
+  // 402 TRIAL_ENDED — same HTTP status as QUOTA_EXCEEDED but a different
+  // meaning; may carry no details and no Retry-After header.
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 402,
+    body: { errors: [{ code: "TRIAL_ENDED", message: "Your trial has ended." }] },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").write("note");
+    check("TRIAL_ENDED throws", false);
+  } catch (e) {
+    const err = e as XmemoryAPIError;
+    check("TRIAL_ENDED throws XmemoryAPIError", e instanceof XmemoryAPIError);
+    check("TRIAL_ENDED status is 402", err.status === 402);
+    check("TRIAL_ENDED code surfaces (distinct from QUOTA_EXCEEDED)", err.code === "TRIAL_ENDED");
+    check("TRIAL_ENDED no Retry-After -> retryAfter undefined", err.retryAfter === undefined);
+  }
+  globalThis.fetch = orig;
+}
+
+{
+  // 429 RATE_LIMITED — genuine velocity limit, retryable with backoff. The
+  // Retry-After header is surfaced as `retryAfter`.
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 429,
+    headers: { "Retry-After": "30" },
+    body: { errors: [{ code: "RATE_LIMITED", message: "Too many requests." }] },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").read("anything");
+    check("RATE_LIMITED throws", false);
+  } catch (e) {
+    const err = e as XmemoryAPIError;
+    check("RATE_LIMITED throws XmemoryAPIError", e instanceof XmemoryAPIError);
+    check("RATE_LIMITED status is 429", err.status === 429);
+    check("RATE_LIMITED code surfaces", err.code === "RATE_LIMITED");
+    check("RATE_LIMITED retryAfter from header", err.retryAfter === 30);
+  }
+  globalThis.fetch = orig;
+}
+
+{
+  // Retry-After in the HTTP-date form (RFC 7231) is converted to a
+  // non-negative number of seconds from now, not left as a raw string.
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 402,
+    headers: { "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT" },
+    body: { errors: [{ code: "QUOTA_EXCEEDED", message: "Daily token quota exhausted." }] },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").read("anything");
+    check("Retry-After HTTP-date throws", false);
+  } catch (e) {
+    const err = e as XmemoryAPIError;
+    check("Retry-After HTTP-date: retryAfter is a number", typeof err.retryAfter === "number");
+    check(
+      "Retry-After HTTP-date: retryAfter is finite and >= 0",
+      Number.isFinite(err.retryAfter) && (err.retryAfter as number) >= 0,
+    );
+  }
+  globalThis.fetch = orig;
+}
+
+{
+  // A Retry-After that is neither delta-seconds nor a valid HTTP-date leaves
+  // retryAfter undefined rather than NaN or a bogus number.
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 402,
+    headers: { "Retry-After": "not-a-date" },
+    body: { errors: [{ code: "QUOTA_EXCEEDED", message: "Daily token quota exhausted." }] },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").read("anything");
+    check("Retry-After unparseable throws", false);
+  } catch (e) {
+    const err = e as XmemoryAPIError;
+    check("Retry-After unparseable: retryAfter is undefined", err.retryAfter === undefined);
   }
   globalThis.fetch = orig;
 }
