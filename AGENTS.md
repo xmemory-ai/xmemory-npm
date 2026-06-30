@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Source-of-truth guidance for agents (and humans) working in `xmemory-npm`, the
-TypeScript/JavaScript client library for the Xmemory API.
+TypeScript/JavaScript client library for the xmemory API.
 
 ## Version bump on every user-facing change
 
