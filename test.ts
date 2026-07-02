@@ -187,6 +187,61 @@ function mockFetch(
 }
 
 // ---------------------------------------------------------------------------
+// Test: decomposed read surfaces per-sub-query results
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          trace_id: "r-1",
+          reader_result: "combined answer",
+          reader_results: [
+            { sub_query: "Who is Bob?", reader_result: "An engineer", error: null },
+            { sub_query: "Who is Ann?", reader_result: "", error: "no data" },
+          ],
+        },
+      ],
+    },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const res = await c.instance("inst-1").read("Who are Bob and Ann?");
+  check("decomposed read keeps combined reader_result", res.reader_result === "combined answer");
+  check("decomposed read exposes two sub-queries", res.reader_results.length === 2);
+  check("sub-query is tagged", res.reader_results[0].sub_query === "Who is Bob?");
+  check("sub-query answer surfaces", res.reader_results[0].reader_result === "An engineer");
+  check("per-sub-query error surfaces", res.reader_results[1].error === "no data");
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: a single-intent read carries no reader_results
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ trace_id: "r-1", reader_result: "An engineer" }] },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const res = await c.instance("inst-1").read("Who is Bob?");
+  check("undecomposed read reader_result surfaces", res.reader_result === "An engineer");
+  check(
+    "undecomposed read reader_results is absent/empty",
+    (res.reader_results ?? []).length === 0,
+  );
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
 // Test: RawApiResponse with missing fields (optional ids/items/errors)
 // ---------------------------------------------------------------------------
 

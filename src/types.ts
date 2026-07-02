@@ -125,9 +125,31 @@ export interface InstanceSchemaInfo {
   readonly data_schema: Record<string, unknown>;
 }
 
+/**
+ * One sub-query and its own answer, in the requested read mode. Appears in
+ * {@link ReadResult.reader_results} when the server decomposed a composite query
+ * into independent sub-queries.
+ */
+export interface TaggedReaderResult {
+  readonly sub_query: string;
+  readonly reader_result: unknown;
+  /**
+   * A user-safe message set when this sub-query could not be answered while the
+   * others still were (partial tolerance); `null` otherwise.
+   */
+  readonly error: string | null;
+}
+
 export interface ReadResult {
   readonly trace_id: string | null;
   readonly reader_result: unknown;
+  /**
+   * Per-sub-query answers when the server decomposed the query into independent
+   * sub-queries. One entry per sub-query (a single-intent query yields exactly
+   * one); `reader_result` above stays the combined back-compat value. Empty
+   * against a server without question decomposition, or when it is disabled.
+   */
+  readonly reader_results: readonly TaggedReaderResult[];
 }
 
 export interface WriteResult {
