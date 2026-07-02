@@ -155,6 +155,22 @@ console.log(result.reader_result);
 
 Options: `{ readMode?, scope?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
 
+#### Composite queries
+
+When a query bundles several independent questions, the server may decompose it
+into sub-queries and answer each one. `reader_result` is still the combined
+answer (for `"single-answer"` mode, a labelled multi-part string); `reader_results`
+holds one `TaggedReaderResult` (`{ sub_query, reader_result, error }`) per
+sub-query so you can read each answer unambiguously. A single-intent query yields
+one entry, and the array is empty against a server without question decomposition.
+
+```typescript
+const result = await inst.read("Who leads sales, and where is HQ?");
+for (const part of result.reader_results) {
+  console.log(part.sub_query, "→", part.error ?? part.reader_result);
+}
+```
+
 #### Scoped reads
 
 By default a read may draw on the whole instance. Pass a `scope` to restrict it

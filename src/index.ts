@@ -51,6 +51,7 @@ export type {
   InstanceInfo,
   InstanceSchemaInfo,
   ReadResult,
+  TaggedReaderResult,
   WriteResult,
   AsyncWriteResult,
   WriteStatusResult,
