@@ -58,9 +58,8 @@ export class XmemoryAPIError extends Error {
     /**
      * Structured error code when the server returned one. **Branch on this,
      * not on the bare HTTP `status`** — the same status can mean different
-     * things. HTTP 402 carries either `"QUOTA_EXCEEDED"` (plan/usage allowance
-     * exhausted — non-retryable) or `"TRIAL_ENDED"` (trial over / subscription
-     * lapsed — non-retryable); HTTP 429 carries `"RATE_LIMITED"` (genuine
+     * things. HTTP 402 carries `"QUOTA_EXCEEDED"` (plan/usage allowance
+     * exhausted — non-retryable); HTTP 429 carries `"RATE_LIMITED"` (genuine
      * velocity limit — retryable with backoff, honour `retryAfter`). For the
      * schema-evolution endpoints this is the `error_type` discriminator
      * (e.g. `"stale_proposal_version"`, `"destructive_confirmation_required"`).
@@ -71,8 +70,7 @@ export class XmemoryAPIError extends Error {
      * Optional structured `details` payload attached to some errors. For
      * `"QUOTA_EXCEEDED"` this carries `kind`
      * (`"daily_quota_exceeded"` | `"monthly_quota_exceeded"`) and
-     * `retry_after_seconds` (`number | null`); `"TRIAL_ENDED"` may carry
-     * `kind: "trial_exceeded"` or no details at all.
+     * `retry_after_seconds` (`number | null`).
      */
     public readonly details?: Record<string, unknown> | null,
     /**
