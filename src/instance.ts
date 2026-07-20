@@ -159,10 +159,15 @@ export class InstanceHandle {
       };
     }
     if (options?.traceId != null) body.trace_id = options.traceId;
-    return this._requestOne<ReadResult>("POST", `/instances/${this.id}/read`, {
+    const result = await this._requestOne<ReadResult>("POST", `/instances/${this.id}/read`, {
       body,
       timeoutMs: options?.timeoutMs,
     });
+    // A server without question decomposition omits `reader_results` entirely;
+    // normalize so callers can always iterate it.
+    return Array.isArray(result.reader_results)
+      ? result
+      : { ...result, reader_results: [] };
   }
 
   async write(text: string, options?: WriteOptions): Promise<WriteResult> {
