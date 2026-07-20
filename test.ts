@@ -649,23 +649,23 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
 }
 
 {
-  // 402 TRIAL_ENDED — same HTTP status as QUOTA_EXCEEDED but a different
-  // meaning; may carry no details and no Retry-After header.
+  // 402 with no details and no Retry-After header — the code still surfaces,
+  // which is what callers branch on.
   const orig = globalThis.fetch;
   globalThis.fetch = mockFetch(() => ({
     status: 402,
-    body: { errors: [{ code: "TRIAL_ENDED", message: "Your trial has ended." }] },
+    body: { errors: [{ code: "QUOTA_EXCEEDED", message: "Quota exhausted." }] },
   }));
   const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
   try {
     await c.instance("inst-1").write("note");
-    check("TRIAL_ENDED throws", false);
+    check("bare 402 throws", false);
   } catch (e) {
     const err = e as XmemoryAPIError;
-    check("TRIAL_ENDED throws XmemoryAPIError", e instanceof XmemoryAPIError);
-    check("TRIAL_ENDED status is 402", err.status === 402);
-    check("TRIAL_ENDED code surfaces (distinct from QUOTA_EXCEEDED)", err.code === "TRIAL_ENDED");
-    check("TRIAL_ENDED no Retry-After -> retryAfter undefined", err.retryAfter === undefined);
+    check("bare 402 throws XmemoryAPIError", e instanceof XmemoryAPIError);
+    check("bare 402 status is 402", err.status === 402);
+    check("bare 402 code surfaces", err.code === "QUOTA_EXCEEDED");
+    check("bare 402 no Retry-After -> retryAfter undefined", err.retryAfter === undefined);
   }
   globalThis.fetch = orig;
 }

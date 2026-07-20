@@ -361,19 +361,17 @@ when the server returned one), `details` (an optional structured payload), and
 `retryAfter` (the `Retry-After` header in seconds, when the server sent one).
 
 **Branch on `code`, not on the bare HTTP status** — the same status can mean
-different things. In particular HTTP `402 Payment Required` is now overloaded:
+different things:
 
 | HTTP | `code`            | Meaning                                              | Retryable?                         |
 | ---- | ----------------- | ---------------------------------------------------- | ---------------------------------- |
 | 402  | `QUOTA_EXCEEDED`  | Tenant exhausted its plan/usage allowance (a daily or monthly token quota). | **No.** Wait for the window to reset. |
-| 402  | `TRIAL_ENDED`     | Trial over / subscription lapsed.                    | **No.** Needs a plan change.       |
 | 429  | `RATE_LIMITED`    | Genuine velocity / rate limit.                       | **Yes**, with backoff.             |
 
 For `QUOTA_EXCEEDED`, `details` carries `kind`
 (`"daily_quota_exceeded"` | `"monthly_quota_exceeded"`) and
 `retry_after_seconds` (`number | null`); when the window is resettable the
 server also sends a `Retry-After` header, surfaced as `retryAfter` (seconds).
-`TRIAL_ENDED` may carry `details.kind === "trial_exceeded"` or no details.
 `RATE_LIMITED` is retryable — honour `retryAfter` (or `Retry-After`) for backoff.
 The client never retries on its own; it only surfaces the value.
 
@@ -389,10 +387,6 @@ try {
       console.error(`Quota exhausted (${kind}); resets in ${e.retryAfter ?? "?"}s`);
       break;
     }
-    case "TRIAL_ENDED":
-      // Non-retryable: trial over / subscription lapsed — upgrade required.
-      console.error("Trial ended — upgrade the plan.");
-      break;
     case "RATE_LIMITED":
       // Retryable: back off and retry, honouring Retry-After.
       console.error(`Rate limited; retry after ${e.retryAfter ?? "a short delay"}s`);
