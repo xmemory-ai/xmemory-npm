@@ -146,8 +146,9 @@ export interface ReadResult {
   /**
    * Per-sub-query answers when the server decomposed the query into independent
    * sub-queries. One entry per sub-query (a single-intent query yields exactly
-   * one); `reader_result` above stays the combined back-compat value. Empty
-   * against a server without question decomposition, or when it is disabled.
+   * one); `reader_result` above stays the combined back-compat value. Always an
+   * array — a server without question decomposition (or with it disabled) omits
+   * the field on the wire and the client normalizes it to `[]`.
    */
   readonly reader_results: readonly TaggedReaderResult[];
 }

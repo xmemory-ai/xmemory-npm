@@ -234,8 +234,8 @@ function mockFetch(
   const res = await c.instance("inst-1").read("Who is Bob?");
   check("undecomposed read reader_result surfaces", res.reader_result === "An engineer");
   check(
-    "undecomposed read reader_results is absent/empty",
-    (res.reader_results ?? []).length === 0,
+    "undecomposed read normalizes reader_results to an empty array",
+    Array.isArray(res.reader_results) && res.reader_results.length === 0,
   );
 
   globalThis.fetch = origFetch;
