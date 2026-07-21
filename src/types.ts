@@ -145,10 +145,11 @@ export interface ReadResult {
   readonly reader_result: unknown;
   /**
    * Per-sub-query answers when the server decomposed the query into independent
-   * sub-queries. One entry per sub-query (a single-intent query yields exactly
-   * one); `reader_result` above stays the combined back-compat value. Always an
-   * array — a server without question decomposition (or with it disabled) omits
-   * the field on the wire and the client normalizes it to `[]`.
+   * sub-queries — one entry per sub-query, so a single-intent query decomposes
+   * to exactly one. `reader_result` above stays the combined back-compat value.
+   * Always an array: a server without question decomposition (or with it
+   * disabled) omits the field on the wire and the client normalizes it to `[]`,
+   * so the array is empty regardless of how many questions the query held.
    */
   readonly reader_results: readonly TaggedReaderResult[];
 }

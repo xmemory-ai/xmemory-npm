@@ -161,9 +161,10 @@ When a query bundles several independent questions, the server may decompose it
 into sub-queries and answer each one. `reader_result` is still the combined
 answer (for `"single-answer"` mode, a labelled multi-part string); `reader_results`
 holds one `TaggedReaderResult` (`{ sub_query, reader_result, error }`) per
-sub-query so you can read each answer unambiguously. A single-intent query yields
-one entry. `reader_results` is always an array: a server without question
-decomposition omits the field on the wire, and the client normalizes it to `[]`.
+sub-query so you can read each answer unambiguously — a single-intent query
+decomposes to one entry. `reader_results` is always an array: a server without
+question decomposition omits the field on the wire and the client normalizes it
+to `[]`, so it is empty regardless of how many questions the query held.
 
 ```typescript
 const result = await inst.read("Who leads sales, and where is HQ?");
