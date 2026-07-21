@@ -220,7 +220,7 @@ function mockFetch(
 }
 
 // ---------------------------------------------------------------------------
-// Test: a single-intent read carries no reader_results
+// Test: server omits reader_results => client normalizes to []
 // ---------------------------------------------------------------------------
 
 {
