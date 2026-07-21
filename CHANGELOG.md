@@ -13,11 +13,12 @@ only read `reader_result` are unaffected.
 ### Added
 
 - `ReadResult.reader_results` — an array of `TaggedReaderResult`, one entry per
-  sub-query the server decomposed the query into (a single-intent query yields
-  exactly one entry). `reader_result` stays the combined back-compat value (for
-  `single-answer` mode, a labelled multi-part string). Always an array — a
-  server without question decomposition (or with it disabled) omits the field
-  on the wire, and the client normalizes it to `[]`.
+  sub-query the server decomposed the query into (so a single-intent query
+  decomposes to one entry). `reader_result` stays the combined back-compat value
+  (for `single-answer` mode, a labelled multi-part string). Always an array — a
+  server without question decomposition (or with it disabled) omits the field on
+  the wire and the client normalizes it to `[]`, so it is empty regardless of
+  how many questions the query held.
 - `TaggedReaderResult` — carries `sub_query` (the sub-question), `reader_result`
   (its answer, in the requested read mode), and `error` (a user-safe message set
   when that one sub-query could not be answered while the others still were;

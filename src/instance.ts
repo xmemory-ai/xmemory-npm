@@ -17,6 +17,7 @@ import type {
   RequestOptions,
   ReviewSuggestionsResult,
   SuggestionRequestOptions,
+  TaggedReaderResult,
   ToolDescription,
   ToolParameterDescription,
   WriteOptions,
@@ -159,15 +160,16 @@ export class InstanceHandle {
       };
     }
     if (options?.traceId != null) body.trace_id = options.traceId;
-    const result = await this._requestOne<ReadResult>("POST", `/instances/${this.id}/read`, {
+    // The wire shape omits `reader_results` on a server without question
+    // decomposition, so type it as optional here and normalize to an always-array
+    // for the public `ReadResult` below.
+    const result = await this._requestOne<Omit<ReadResult, "reader_results"> & {
+      reader_results?: readonly TaggedReaderResult[];
+    }>("POST", `/instances/${this.id}/read`, {
       body,
       timeoutMs: options?.timeoutMs,
     });
-    // A server without question decomposition omits `reader_results` entirely;
-    // normalize so callers can always iterate it.
-    return Array.isArray(result.reader_results)
-      ? result
-      : { ...result, reader_results: [] };
+    return { ...result, reader_results: result.reader_results ?? [] };
   }
 
   async write(text: string, options?: WriteOptions): Promise<WriteResult> {
