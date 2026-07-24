@@ -2,6 +2,16 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.2.2
+
+### Fixed
+
+- `write` / `writeAsync`: the `diffEngine` option was sent on the wire as
+  `diff_engine`, but the server only accepts `use_diff_engine` and rejects
+  unknown fields — so setting `diffEngine` failed the request with a validation
+  error. It is now sent as `use_diff_engine`. Requests that leave `diffEngine`
+  unset are unaffected (the key was and is omitted).
+
 ## 3.2.1
 
 Documentation-only release: removes `402 TRIAL_ENDED` from the documented error
