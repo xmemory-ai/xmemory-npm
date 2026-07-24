@@ -148,6 +148,36 @@ function mockFetch(
 }
 
 // ---------------------------------------------------------------------------
+// Test: diffEngine option is sent as the use_diff_engine wire key
+// ---------------------------------------------------------------------------
+
+{
+  let capturedBody: Record<string, unknown> = {};
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    return { status: 200, body: { items: [{ write_id: "w1", trace_id: "t1" }] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const inst = c.instance("test-inst");
+
+  await inst.write("hello", { diffEngine: true });
+  check("write: diffEngine sent as use_diff_engine", capturedBody["use_diff_engine"] === true);
+  check("write: no diff_engine wire key", !("diff_engine" in capturedBody));
+
+  await inst.writeAsync("hello", { diffEngine: false });
+  check("writeAsync: diffEngine sent as use_diff_engine", capturedBody["use_diff_engine"] === false);
+  check("writeAsync: no diff_engine wire key", !("diff_engine" in capturedBody));
+
+  await inst.write("hello");
+  check("write: use_diff_engine omitted when diffEngine unset", !("use_diff_engine" in capturedBody));
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
 // Test: _requestOne throws when server returns zero items
 // ---------------------------------------------------------------------------
 

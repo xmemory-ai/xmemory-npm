@@ -177,7 +177,7 @@ export class InstanceHandle {
       text,
       extraction_logic: options?.extractionLogic ?? "fast",
     };
-    if (options?.diffEngine != null) body.diff_engine = options.diffEngine;
+    if (options?.diffEngine != null) body.use_diff_engine = options.diffEngine;
     return this._requestOne<WriteResult>("POST", `/instances/${this.id}/write`, {
       body,
       timeoutMs: options?.timeoutMs,
@@ -189,7 +189,7 @@ export class InstanceHandle {
       text,
       extraction_logic: options?.extractionLogic ?? "fast",
     };
-    if (options?.diffEngine != null) body.diff_engine = options.diffEngine;
+    if (options?.diffEngine != null) body.use_diff_engine = options.diffEngine;
     return this._requestOne<AsyncWriteResult>("POST", `/instances/${this.id}/write_async`, {
       body,
       timeoutMs: options?.timeoutMs,
