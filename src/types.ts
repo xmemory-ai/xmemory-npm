@@ -180,6 +180,81 @@ export interface GenerateSchemaResult {
 }
 
 // ---------------------------------------------------------------------------
+// Structured write mutations
+//
+// Field names are snake_case to match the wire format exactly — a
+// `WriteMutation[]` is sent to the server untransformed. Each mutation is
+// tagged `object_mutation` / `relation_mutation` and carries exactly one of
+// `create` / `update` / `delete` (enforced at compile time via `never`).
+// ---------------------------------------------------------------------------
+
+export interface RelationEndpoint {
+  /** Relation role name from the instance schema. */
+  object_name: string;
+  /** Endpoint identity: user primary-key fields (field -> value), or `{ xuid: ... }`. */
+  key?: Record<string, unknown>;
+}
+
+/** Create an object: `key` holds the user primary-key fields (no `xuid` — it is
+ * generated server-side), `values` the remaining field values. */
+export interface ObjectCreatePayload {
+  key?: Record<string, unknown>;
+  values?: Record<string, unknown>;
+}
+
+/** Update an object identified by `key` (primary-key fields or `{ xuid: ... }`).
+ * A `null` value in `values` clears that field. */
+export interface ObjectUpdatePayload {
+  key: Record<string, unknown>;
+  values: Record<string, unknown>;
+}
+
+/** Delete the object identified by `key` (primary-key fields or `{ xuid: ... }`). */
+export interface ObjectDeletePayload {
+  key: Record<string, unknown>;
+}
+
+/** Create a relation between the `endpoints`, with optional own-field `values`. */
+export interface RelationCreatePayload {
+  endpoints: RelationEndpoint[];
+  values?: Record<string, unknown>;
+}
+
+/** Update a relation's own fields. Address it by `endpoints`, or by
+ * `key: { xuid: ... }` when endpoints are ambiguous. A `null` value in `values`
+ * clears that field. */
+export interface RelationUpdatePayload {
+  key?: Record<string, unknown>;
+  endpoints?: RelationEndpoint[];
+  values: Record<string, unknown>;
+}
+
+/** Delete relation(s) matched by `endpoints` (a subset is allowed) or by
+ * `key: { xuid: ... }`. Deleting more than one matched row requires
+ * `allow_bulk_delete: true`. */
+export interface RelationDeletePayload {
+  key?: Record<string, unknown>;
+  endpoints?: RelationEndpoint[];
+  allow_bulk_delete?: boolean;
+}
+
+export type ObjectMutationBody = { object_type: string } & (
+  | { create: ObjectCreatePayload; update?: never; delete?: never }
+  | { update: ObjectUpdatePayload; create?: never; delete?: never }
+  | { delete: ObjectDeletePayload; create?: never; update?: never }
+);
+
+export type RelationMutationBody = { relation_type: string } & (
+  | { create: RelationCreatePayload; update?: never; delete?: never }
+  | { update: RelationUpdatePayload; create?: never; delete?: never }
+  | { delete: RelationDeletePayload; create?: never; update?: never }
+);
+
+export type WriteMutation =
+  | { object_mutation: ObjectMutationBody; relation_mutation?: never }
+  | { relation_mutation: RelationMutationBody; object_mutation?: never };
+
+// ---------------------------------------------------------------------------
 // Schema evolution — migration ops (discriminated union on `op_type`)
 //
 // Field names are snake_case to match the wire format exactly, so a plan

@@ -20,10 +20,32 @@ import type {
   TaggedReaderResult,
   ToolDescription,
   ToolParameterDescription,
+  WriteMutation,
   WriteOptions,
   WriteResult,
   WriteStatusResult,
 } from "./types.js";
+
+/** Build the shared `/write` + `/write_async` request body for either input mode. */
+function buildWriteBody(
+  input: string | readonly WriteMutation[],
+  options?: WriteOptions,
+): Record<string, unknown> {
+  if (typeof input !== "string") {
+    if (input.length === 0) {
+      throw new Error("structured write requires at least one mutation");
+    }
+    // Structured path: no text, no extraction options — mutations go straight
+    // to the wire.
+    return { structured_mutations: input };
+  }
+  const body: Record<string, unknown> = {
+    text: input,
+    extraction_logic: options?.extractionLogic ?? "fast",
+  };
+  if (options?.diffEngine != null) body.use_diff_engine = options.diffEngine;
+  return body;
+}
 
 const DEFAULT_DESCRIBE_TTL_MS = 300_000; // 5 minutes
 
@@ -172,26 +194,33 @@ export class InstanceHandle {
     return { ...result, reader_results: result.reader_results ?? [] };
   }
 
-  async write(text: string, options?: WriteOptions): Promise<WriteResult> {
-    const body: Record<string, unknown> = {
-      text,
-      extraction_logic: options?.extractionLogic ?? "fast",
-    };
-    if (options?.diffEngine != null) body.use_diff_engine = options.diffEngine;
+  /**
+   * Write to this instance: extract from free text, or apply structured
+   * mutations. Pass a string to extract structured data from free-form text,
+   * or a `WriteMutation[]` to apply deterministic, LLM-free create / update /
+   * delete edits (applied in array order; later mutations may reference
+   * objects created earlier in the batch, and a `null` value in a mutation's
+   * `values` clears that field). `extractionLogic` / `diffEngine` only apply
+   * to the text form.
+   */
+  async write(text: string, options?: WriteOptions): Promise<WriteResult>;
+  async write(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<WriteResult>;
+  async write(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<WriteResult> {
     return this._requestOne<WriteResult>("POST", `/instances/${this.id}/write`, {
-      body,
+      body: buildWriteBody(input, options),
       timeoutMs: options?.timeoutMs,
     });
   }
 
-  async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult> {
-    const body: Record<string, unknown> = {
-      text,
-      extraction_logic: options?.extractionLogic ?? "fast",
-    };
-    if (options?.diffEngine != null) body.use_diff_engine = options.diffEngine;
+  /**
+   * Submit a write job and return immediately with a `write_id` for polling.
+   * Accepts the same text / `WriteMutation[]` dual input as {@link write}.
+   */
+  async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult>;
+  async writeAsync(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<AsyncWriteResult>;
+  async writeAsync(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<AsyncWriteResult> {
     return this._requestOne<AsyncWriteResult>("POST", `/instances/${this.id}/write_async`, {
-      body,
+      body: buildWriteBody(input, options),
       timeoutMs: options?.timeoutMs,
     });
   }

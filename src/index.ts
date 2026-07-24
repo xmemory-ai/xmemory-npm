@@ -62,6 +62,20 @@ export type {
   RawDescribeResult,
 } from "./types.js";
 
+// Structured write mutations
+export type {
+  WriteMutation,
+  ObjectMutationBody,
+  ObjectCreatePayload,
+  ObjectUpdatePayload,
+  ObjectDeletePayload,
+  RelationMutationBody,
+  RelationCreatePayload,
+  RelationUpdatePayload,
+  RelationDeletePayload,
+  RelationEndpoint,
+} from "./types.js";
+
 // Schema evolution — migration ops
 export type {
   MigrationPlan,
