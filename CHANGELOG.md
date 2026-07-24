@@ -2,6 +2,29 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.3.0
+
+Structured writes: `write` and `writeAsync` now also accept a
+`WriteMutation[]` — an ordered list of deterministic, LLM-free
+create/update/delete mutations of objects and relations — instead of free
+text. Mutations are wire-shaped (`{ object_mutation: { object_type, create |
+update | delete } }` / `{ relation_mutation: ... }`) and sent untransformed;
+exactly one op per mutation is enforced at compile time, and a `null` value
+inside a mutation's `values` clears that field. Text writes are unchanged on
+the wire.
+
+Requires a server with structured-writes support (`structured_mutations` on
+`/write` and `/write_async`); older servers reject the new request field.
+
+### Added
+
+- `write(mutations, options?)` / `writeAsync(mutations, options?)` overloads
+  (an empty mutations array throws).
+- Exported mutation types: `WriteMutation`, `ObjectMutationBody`,
+  `ObjectCreatePayload`, `ObjectUpdatePayload`, `ObjectDeletePayload`,
+  `RelationMutationBody`, `RelationCreatePayload`, `RelationUpdatePayload`,
+  `RelationDeletePayload`, `RelationEndpoint`.
+
 ## 3.2.2
 
 ### Fixed

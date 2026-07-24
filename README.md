@@ -115,9 +115,9 @@ Get a handle to an instance and use it for reads, writes, and extractions.
 const inst = xm.instance("<instance-id>");
 ```
 
-### `inst.write(text, options?)` → `WriteResult`
+### `inst.write(text | mutations, options?)` → `WriteResult`
 
-Extract and store structured objects from text.
+Extract and store structured objects from text:
 
 ```typescript
 const result = await inst.write("Bob is a designer based in Berlin.");
@@ -127,9 +127,34 @@ console.log(result.changes); // what the write created / updated / deleted
 
 Options: `{ extractionLogic?, diffEngine?, timeoutMs? }` — `extractionLogic` defaults to `"fast"`.
 
-### `inst.writeAsync(text, options?)` → `AsyncWriteResult`
+Or pass a `WriteMutation[]` for **structured writes** — deterministic, LLM-free
+create/update/delete mutations applied in array order (later mutations may
+reference objects created earlier in the batch; a `null` value in `values`
+clears that field):
 
-Start an asynchronous write. Returns a `write_id` for tracking.
+```typescript
+const result = await inst.write([
+  {
+    object_mutation: {
+      object_type: "person",
+      create: { key: { name: "Bob" }, values: { role: "designer" } },
+    },
+  },
+  {
+    object_mutation: {
+      object_type: "person",
+      update: { key: { name: "Bob" }, values: { role: null } }, // null clears
+    },
+  },
+]);
+```
+
+Options for the mutations form: `{ timeoutMs? }` (extraction options don't apply).
+
+### `inst.writeAsync(text | mutations, options?)` → `AsyncWriteResult`
+
+Start an asynchronous write (same text / `WriteMutation[]` dual input as
+`inst.write`). Returns a `write_id` for tracking.
 
 ```typescript
 const { write_id } = await inst.writeAsync("Carol manages the London office.");

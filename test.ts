@@ -5,6 +5,7 @@ import {
   InstanceHandle,
   xmemoryInstance,
   SchemaType,
+  type WriteMutation,
 } from "./src/index.js";
 
 const errors: string[] = [];
@@ -173,6 +174,72 @@ function mockFetch(
 
   await inst.write("hello");
   check("write: use_diff_engine omitted when diffEngine unset", !("use_diff_engine" in capturedBody));
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: structured writes — WriteMutation[] goes to the wire untransformed
+// ---------------------------------------------------------------------------
+
+{
+  let capturedUrl = "";
+  let capturedBody: Record<string, unknown> = {};
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url, init) => {
+    capturedUrl = url;
+    capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    return { status: 200, body: { items: [{ write_id: "w1", trace_id: "t1" }] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const inst = c.instance("test-inst");
+
+  // The typed one-of unions compile-check here (tsc is half of `npm test`).
+  const mutations: WriteMutation[] = [
+    {
+      object_mutation: {
+        object_type: "person",
+        create: { key: { email: "a@x.io" }, values: { name: "Alice" } },
+      },
+    },
+    {
+      relation_mutation: {
+        relation_type: "works_at",
+        delete: { endpoints: [{ object_name: "person", key: { email: "a@x.io" } }], allow_bulk_delete: true },
+      },
+    },
+  ];
+
+  await inst.write(mutations);
+  check("structured write: hits /write", capturedUrl.endsWith("/instances/test-inst/write"));
+  check(
+    "structured write: mutations untransformed",
+    JSON.stringify(capturedBody.structured_mutations) === JSON.stringify(mutations),
+  );
+  check("structured write: no text key", !("text" in capturedBody));
+  check("structured write: no extraction_logic key", !("extraction_logic" in capturedBody));
+
+  await inst.writeAsync([
+    { object_mutation: { object_type: "person", update: { key: { xuid: "x-1" }, values: { role: null } } } },
+  ]);
+  check("structured writeAsync: hits /write_async", capturedUrl.endsWith("/instances/test-inst/write_async"));
+  check(
+    "structured writeAsync: null field-clear survives",
+    JSON.stringify(capturedBody.structured_mutations).includes('"role":null'),
+  );
+
+  await inst.write("plain text");
+  check("text write: no structured_mutations key", !("structured_mutations" in capturedBody));
+
+  let threwOnEmpty = false;
+  try {
+    await inst.write([]);
+  } catch {
+    threwOnEmpty = true;
+  }
+  check("structured write: empty array throws", threwOnEmpty);
 
   globalThis.fetch = origFetch;
 }
