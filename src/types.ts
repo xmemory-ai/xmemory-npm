@@ -111,6 +111,22 @@ export interface InstanceInfo {
   readonly name: string;
   readonly description: string | null;
   readonly data_schema: Record<string, unknown> | null;
+  // Agent-integration metadata. `null` means "not set" throughout — never "off".
+  //
+  // The first three are advisory hints that seed what a connect flow proposes.
+  // They are typed as plain strings rather than `AgentSurface` / `BindingTier`
+  // on purpose: the server tolerates a stored value this release has never heard
+  // of, and a narrow union here would make such an instance unreadable.
+  readonly agent_surfaces?: string[] | null;
+  readonly agent_default_binding_tier?: string | null;
+  readonly agent_engagement_hints?: string[] | null;
+  // Authoritative rather than advisory: what the owner told agents to do with
+  // this instance, meant to be rendered verbatim wherever it is shown.
+  readonly agent_owner_instructions?: string | null;
+  // Which edit of the instructions above this response describes. Pass it back as
+  // `expectedOwnerInstructionsEpoch` when saving an edit composed from it, and a
+  // save that raced someone else's is refused instead of silently overwriting.
+  readonly agent_owner_instructions_epoch?: number;
   // Schema-evolution fields — present only on `updateInstanceSchema` responses
   // when the call ran a (non-no-op) migration.
   readonly migration_id?: string | null;
@@ -118,6 +134,36 @@ export interface InstanceInfo {
   readonly new_version?: number | null;
   readonly migration_warnings?: string[] | null;
 }
+
+/**
+ * An agent surface an instance is expected to be used from.
+ *
+ * Advisory: it seeds what a connect flow leads with, and grants nothing. Offered
+ * for writing the hint; reads stay plain strings so a surface added to the server
+ * after this release is returned rather than rejected.
+ */
+export const AgentSurface = {
+  CLAUDE_CODE: "claude_code",
+  CODEX: "codex",
+  CLAUDE_DESKTOP: "claude_desktop",
+  CHATGPT: "chatgpt",
+} as const;
+
+export type AgentSurfaceValue = (typeof AgentSurface)[keyof typeof AgentSurface];
+
+/**
+ * How prominently a bound instance should participate in an agent session.
+ *
+ * `AUTOLOAD` proposes injecting the instance's context at session start;
+ * `AVAILABLE` proposes a one-line mention an agent can act on when relevant.
+ * A default for a binding only — the client-side binding is authoritative.
+ */
+export const BindingTier = {
+  AUTOLOAD: "autoload",
+  AVAILABLE: "available",
+} as const;
+
+export type BindingTierValue = (typeof BindingTier)[keyof typeof BindingTier];
 
 export interface InstanceSchemaInfo {
   readonly data_schema: Record<string, unknown>;
@@ -610,6 +656,48 @@ export interface CreateInstanceOptions {
 
 export interface GenerateSchemaOptions {
   currentYmlSchema?: string;
+  timeoutMs?: number;
+}
+
+/**
+ * Extra fields for `updateInstanceMetadata`.
+ *
+ * Omitting a field leaves the stored value exactly as it is; passing `null`
+ * clears it. The endpoint treats a field present in the body as a field to set,
+ * so nothing you do not name is ever sent.
+ */
+export interface UpdateInstanceMetadataOptions {
+  /** What the owner tells agents to do with this instance. Max 2000 characters. */
+  agentOwnerInstructions?: string | null;
+  /**
+   * The `agent_owner_instructions_epoch` your edit was composed from. Send it and
+   * a save that raced someone else's edit is refused rather than overwriting it.
+   */
+  expectedOwnerInstructionsEpoch?: number;
+  timeoutMs?: number;
+}
+
+/**
+ * Fields for `patchInstanceMetadata`. Every one is optional and independent:
+ * omit it and the stored value is untouched, pass `null` to clear it.
+ */
+export interface PatchInstanceMetadataOptions {
+  name?: string;
+  description?: string | null;
+  /** Advisory: seeds what a connect flow leads with, and grants nothing. */
+  agentSurfaces?: readonly string[] | null;
+  agentDefaultBindingTier?: string | null;
+  /**
+   * Short routing phrases ("a convention is learned or corrected"). The server
+   * caps them at 16 of at most 200 characters each.
+   */
+  agentEngagementHints?: readonly string[] | null;
+  /**
+   * Authoritative rather than advisory: rendered verbatim wherever it is shown.
+   * Max 2000 characters. This endpoint takes no epoch guard — use
+   * `updateInstanceMetadata` when you need one.
+   */
+  agentOwnerInstructions?: string | null;
   timeoutMs?: number;
 }
 

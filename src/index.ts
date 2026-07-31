@@ -14,7 +14,10 @@ export { XmemoryAPIError, XmemoryHealthCheckError } from "./types.js";
 
 // Enums
 export { SchemaType } from "./types.js";
+export { AgentSurface, BindingTier } from "./types.js";
 export type {
+  AgentSurfaceValue,
+  BindingTierValue,
   SchemaTypeValue,
   ExtractionLogic,
   ReadMode,
@@ -38,6 +41,8 @@ export type {
   ExtractOptions,
   CreateInstanceOptions,
   GenerateSchemaOptions,
+  UpdateInstanceMetadataOptions,
+  PatchInstanceMetadataOptions,
   UpdateInstanceSchemaOptions,
   DryRunMigrationOptions,
   ListMigrationsOptions,

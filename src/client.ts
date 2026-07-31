@@ -20,9 +20,11 @@ import {
   type ListMigrationsOptions,
   type ListMigrationsResult,
   type MigrationRecord,
+  type PatchInstanceMetadataOptions,
   type RawApiResponse,
   type RequestOptions,
   type SchemaTypeValue,
+  type UpdateInstanceMetadataOptions,
   type UpdateInstanceSchemaOptions,
   type XmemoryClientOptions,
   XmemoryAPIError,
@@ -117,7 +119,18 @@ export interface AdminNamespace {
     instanceId: string,
     name: string,
     description: string,
-    options?: RequestOptions,
+    options?: UpdateInstanceMetadataOptions,
+  ): Promise<InstanceInfo>;
+  /**
+   * Change some of an instance's metadata, leaving the rest alone.
+   *
+   * Prefer this over `updateInstanceMetadata` when changing an agent hint: it
+   * does not require restating the name, and it is the only call that accepts
+   * `agentSurfaces`, `agentDefaultBindingTier` and `agentEngagementHints`.
+   */
+  patchInstanceMetadata(
+    instanceId: string,
+    options?: PatchInstanceMetadataOptions,
   ): Promise<InstanceInfo>;
   generateSchema(
     clusterId: string,
@@ -384,8 +397,45 @@ export class XmemoryClient {
       },
 
       updateInstanceMetadata: async (instanceId, name, description, options?) => {
+        // Only the fields the caller named are sent. The endpoint treats a field
+        // present in the body as a field to set, so serializing
+        // `agent_owner_instructions` unasked would wipe an owner's standing rule
+        // as a side effect of a rename.
+        const body: Record<string, unknown> = { name, description };
+        if (options?.agentOwnerInstructions !== undefined) {
+          body.agent_owner_instructions = options.agentOwnerInstructions;
+        }
+        if (options?.expectedOwnerInstructionsEpoch !== undefined) {
+          body.expected_owner_instructions_epoch = options.expectedOwnerInstructionsEpoch;
+        }
         return this._requestOne<InstanceInfo>("PUT", `/instances/${instanceId}`, {
-          body: { name, description },
+          body,
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      patchInstanceMetadata: async (instanceId, options?) => {
+        // Same rule as above, applied to every field: absent means "leave it as
+        // it is", an explicit null means "clear it".
+        const body: Record<string, unknown> = {};
+        if (options?.name !== undefined) body.name = options.name;
+        if (options?.description !== undefined) body.description = options.description;
+        if (options?.agentSurfaces !== undefined) {
+          // Copied so a caller mutating their array afterwards cannot change what
+          // a retry sends.
+          body.agent_surfaces = options.agentSurfaces && [...options.agentSurfaces];
+        }
+        if (options?.agentDefaultBindingTier !== undefined) {
+          body.agent_default_binding_tier = options.agentDefaultBindingTier;
+        }
+        if (options?.agentEngagementHints !== undefined) {
+          body.agent_engagement_hints = options.agentEngagementHints && [...options.agentEngagementHints];
+        }
+        if (options?.agentOwnerInstructions !== undefined) {
+          body.agent_owner_instructions = options.agentOwnerInstructions;
+        }
+        return this._requestOne<InstanceInfo>("PATCH", `/instances/${instanceId}`, {
+          body,
           timeoutMs: options?.timeoutMs,
         });
       },
