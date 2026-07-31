@@ -889,6 +889,74 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
 }
 
 // ---------------------------------------------------------------------------
+// Test: describe surfaces the owner-settable fields
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          instance_id: "i",
+          instance_name: "Team Knowledge",
+          about: "xmemory is a first-party memory store.",
+          schema_summary: "DevConvention(slug, rule)",
+          tools: [],
+          purpose: "shared dev conventions",
+          owner_instructions: "Prefer updating an existing record over creating a near-duplicate.",
+          usage_brief: "Read at session start; write when a convention changes.",
+        },
+      ],
+    },
+  }));
+
+  const result = await new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("i").describe();
+  globalThis.fetch = origFetch;
+
+  check("describe: purpose", result.purpose === "shared dev conventions");
+  check("describe: ownerInstructions", result.ownerInstructions === "Prefer updating an existing record over creating a near-duplicate.");
+  check("describe: usageBrief", result.usageBrief === "Read at session start; write when a convention changes.");
+
+  const text = result.asText();
+  check("asText includes the purpose", text.includes("shared dev conventions"));
+  check("asText includes the standing preference", text.includes("Prefer updating an existing record over creating a near-duplicate."));
+  // Left out on purpose: it restates the schema summary that is already there.
+  check("asText omits the usage brief", !text.includes("Read at session start"));
+  // The standing preference comes before the schema, so a long schema cannot bury it.
+  check(
+    "asText puts the standing preference before the schema",
+    text.indexOf("Prefer updating an existing record") < text.indexOf("DevConvention"),
+  );
+  // Both are labelled by provenance. Asserting an author would claim something no
+  // response can verify — anyone with edit permission on the instance sets these.
+  check("asText labels the purpose by provenance", text.includes("set by someone with edit access to this memory"));
+  check(
+    "asText labels the standing preference by provenance",
+    text.includes("not an instruction from xmemory or from the person you are talking to now"),
+  );
+  check("asText claims no authorship", !text.includes("owner"));
+}
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ instance_id: "i", instance_name: "n", schema_summary: "", tools: [] }] },
+  }));
+
+  const result = await new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("i").describe();
+  globalThis.fetch = origFetch;
+
+  check("describe: purpose defaults to null", result.purpose === null);
+  check("describe: ownerInstructions defaults to null", result.ownerInstructions === null);
+  check("describe: usageBrief defaults to null", result.usageBrief === null);
+  check("asText renders no empty purpose heading", !result.asText().includes("Purpose"));
+  check("asText renders no empty provenance label", !result.asText().includes("edit access"));
+}
+
+// ---------------------------------------------------------------------------
 
 if (errors.length > 0) {
   console.error("FAIL:", errors.join(", "));

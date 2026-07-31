@@ -548,6 +548,23 @@ export interface RawDescribeResult {
   readonly about?: string;
   readonly schema_summary: string;
   readonly tools: ToolDescription[];
+  /**
+   * What this memory is for. This is the instance's description, under the name
+   * the agent-facing surfaces give it.
+   */
+  readonly purpose?: string | null;
+  /**
+   * The standing preference set for this memory. Rendered verbatim — never
+   * paraphrased or summarized — so a rule survives exactly as written. "owner"
+   * is the wire field's name, not a verified claim about authorship.
+   */
+  readonly owner_instructions?: string | null;
+  /**
+   * The server-generated counterpart to `purpose`: how this instance is actually
+   * used, derived from its schema. Absent until it has been generated, and
+   * cleared again by a schema change, so treat its absence as ordinary.
+   */
+  readonly usage_brief?: string | null;
 }
 
 // ---------------------------------------------------------------------------
