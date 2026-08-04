@@ -120,8 +120,10 @@ export interface InstanceInfo {
   readonly agent_surfaces?: string[] | null;
   readonly agent_default_binding_tier?: string | null;
   readonly agent_engagement_hints?: string[] | null;
-  // Authoritative rather than advisory: what the owner told agents to do with
-  // this instance, meant to be rendered verbatim wherever it is shown.
+  // Authoritative rather than advisory: it outranks generated text and is meant
+  // to be rendered verbatim wherever it is shown. Not a verified claim about
+  // authorship — "owner" is the wire field's name, and anyone holding edit
+  // permission on the instance can set it, including an agent asked to.
   readonly agent_owner_instructions?: string | null;
   // Which edit of the instructions above this response describes. Pass it back as
   // `expectedOwnerInstructionsEpoch` when saving an edit composed from it, and a
@@ -667,7 +669,12 @@ export interface GenerateSchemaOptions {
  * so nothing you do not name is ever sent.
  */
 export interface UpdateInstanceMetadataOptions {
-  /** What the owner tells agents to do with this instance. Max 2000 characters. */
+  /**
+   * The standing preference for how agents should use this instance, set by
+   * anyone holding edit permission on it. Rendered verbatim. Max 2000
+   * characters. This is the path to prefer for the field — it is the only one
+   * that carries `expectedOwnerInstructionsEpoch`.
+   */
   agentOwnerInstructions?: string | null;
   /**
    * The `agent_owner_instructions_epoch` your edit was composed from. Send it and
@@ -693,9 +700,16 @@ export interface PatchInstanceMetadataOptions {
    */
   agentEngagementHints?: readonly string[] | null;
   /**
-   * Authoritative rather than advisory: rendered verbatim wherever it is shown.
-   * Max 2000 characters. This endpoint takes no epoch guard — use
-   * `updateInstanceMetadata` when you need one.
+   * Authoritative rather than advisory — it outranks generated text and is
+   * rendered verbatim wherever it is shown, not that its authorship is
+   * verified: anyone holding edit permission can set it, including an agent
+   * asked to. Max 2000 characters.
+   *
+   * Prefer `updateInstanceMetadata` for this field. This endpoint accepts no
+   * `expectedOwnerInstructionsEpoch`, so an edit composed from a value someone
+   * has since replaced overwrites theirs silently. The three hints above are
+   * last-writer-wins by design — a lost update there only re-proposes a
+   * suggestion — but a lost instruction is a rule that stops being enforced.
    */
   agentOwnerInstructions?: string | null;
   timeoutMs?: number;

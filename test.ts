@@ -1018,6 +1018,10 @@ async function captureRequest(
 
   check("InstanceInfo reads agent_surfaces", JSON.stringify(info.agent_surfaces) === JSON.stringify(["claude_code"]));
   check("InstanceInfo reads the binding tier", info.agent_default_binding_tier === "autoload");
+  check(
+    "InstanceInfo reads the engagement hints",
+    JSON.stringify(info.agent_engagement_hints) === JSON.stringify(["a convention is learned"]),
+  );
   check("InstanceInfo reads the owner instructions", info.agent_owner_instructions === "Prefer updating an existing record.");
   check("InstanceInfo reads the epoch", info.agent_owner_instructions_epoch === 4);
 }

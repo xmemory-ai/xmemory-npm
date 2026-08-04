@@ -114,23 +114,24 @@ const deletedIds = await xm.admin.deleteInstance(instanceId);
 ### Agent-facing instance metadata
 
 An instance can carry metadata that shapes how agents connect to it and what
-they do with it. `patchInstanceMetadata` is the way to set it: every option is
-independent, **omitting one leaves the stored value untouched**, and passing
-`null` clears it.
+they do with it. `patchInstanceMetadata` is the way to set the advisory hints:
+every option is independent, **omitting one leaves the stored value
+untouched**, and passing `null` clears it.
 
 ```typescript
 import { AgentSurface, BindingTier } from "xmemory";
 
 await xm.admin.patchInstanceMetadata(instanceId, {
-  // Authoritative: rendered verbatim wherever agents are told about this
-  // instance. Max 2000 characters.
-  agentOwnerInstructions: "Prefer updating an existing record over creating a near-duplicate.",
   // Advisory hints — they seed what a connect flow proposes, and grant nothing.
   agentSurfaces: [AgentSurface.CLAUDE_CODE, AgentSurface.CODEX],
   agentDefaultBindingTier: BindingTier.AUTOLOAD,
   agentEngagementHints: ["a convention is learned or corrected"],
 });
 ```
+
+Concurrent edits to these three are last-writer-wins by design: they only seed
+what a connect flow proposes, so the loser of a race re-applies a suggestion.
+`agentOwnerInstructions` is not like that — see below.
 
 Reading it back:
 
@@ -146,10 +147,13 @@ These read as plain strings rather than a narrow union, so a value your server
 knows and this release does not is returned rather than making the instance
 unreadable.
 
-**Editing instructions safely.** `agent_owner_instructions` can be edited by
-more than one client at a time, so an edit composed from a value you read
-earlier can lose a race. Pass the epoch you read it at and the server
-refuses the losing save instead of applying it:
+**Setting the standing instructions.** Use `updateInstanceMetadata` for
+`agentOwnerInstructions`, not `patchInstanceMetadata`. The field is rendered to
+agents verbatim, and a second writer edits it from the same screen, so a
+silently lost edit is a rule that stops being enforced. Only
+`updateInstanceMetadata` carries `expectedOwnerInstructionsEpoch`: pass the
+epoch you read the value at and the server refuses the losing save instead of
+applying it:
 
 ```typescript
 const info = await xm.admin.getInstance(instanceId);
@@ -158,6 +162,11 @@ await xm.admin.updateInstanceMetadata(instanceId, info.name, info.description ??
   expectedOwnerInstructionsEpoch: info.agent_owner_instructions_epoch,
 });
 ```
+
+`patchInstanceMetadata` also accepts the field — it is the only way to set it
+without restating the name — but it can carry no guard, so an edit composed
+from stale data overwrites a newer one silently. Reach for it only when you are
+seeding a value nobody else is editing.
 
 ## Instance data operations
 
