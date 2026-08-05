@@ -14,9 +14,17 @@ export { XmemoryAPIError, XmemoryHealthCheckError } from "./types.js";
 
 // Enums
 export { SchemaType } from "./types.js";
-export { AgentSurface, BindingTier } from "./types.js";
+export { AgentSurface, BindingTier, FragmentMerge, SetupFormat, StepKind } from "./types.js";
 export type {
+  AgentSetupResult,
+  AgentSetupStep,
+  AgentSetupSurface,
   AgentSurfaceValue,
+  FragmentMergeValue,
+  ProjectFragment,
+  ProjectSetup,
+  SetupFormatValue,
+  StepKindValue,
   BindingTierValue,
   SchemaTypeValue,
   ExtractionLogic,

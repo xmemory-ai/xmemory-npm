@@ -3,6 +3,8 @@
  */
 
 import type {
+  SetupFormatValue,
+  AgentSetupResult,
   ApplyPendingDecisionsResult,
   AsyncWriteResult,
   DecideSuggestionsResult,
@@ -25,6 +27,7 @@ import type {
   WriteResult,
   WriteStatusResult,
 } from "./types.js";
+import { SetupFormat } from "./types.js";
 
 /** Build the shared `/write` + `/write_async` request body for either input mode. */
 function buildWriteBody(
@@ -378,6 +381,33 @@ export class InstanceHandle {
     this._describeCache = result;
     this._describeCacheAt = now;
     return result;
+  }
+
+  /**
+   * How to connect *this* instance somewhere else, most likely surface first.
+   *
+   * Answers "how do I also reach this memory on my desktop, or in another editor" —
+   * not how to reach it from here, which this handle already does. The same payload
+   * `get_setup_instructions` serves over MCP and `xmemcli instance setup` prints.
+   *
+   * **Carries no credential.** The steps tell a reader to sign in themselves, out of
+   * band, so nothing returned here is a secret.
+   *
+   * Not cached, unlike `describe()`: it is computed from the instance's current
+   * metadata, so an owner who edits a surface hint expects the next call to show it.
+   *
+   * `format: SetupFormat.PROJECT` additionally returns the files a customer commits so a
+   * whole team gets this instance. Read `result.format` rather than assuming: a server
+   * older than that parameter ignores it, answers 200, and names no format at all, so
+   * `undefined` is the signal that this deployment predates the project rendering.
+   */
+  async setupInstructions(
+    options?: RequestOptions & { format?: SetupFormatValue },
+  ): Promise<AgentSetupResult> {
+    return this._requestOne<AgentSetupResult>("GET", `/instances/${this.id}/agent_setup`, {
+      params: { format: options?.format ?? SetupFormat.AGENT },
+      timeoutMs: options?.timeoutMs,
+    });
   }
 
   /** Clear the cached describe result so the next `describe()` call fetches fresh data. */
