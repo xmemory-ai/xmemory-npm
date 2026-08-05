@@ -432,6 +432,47 @@ compatibility — narrow them to `MigrationOp` when needed.
 
 Runnable end-to-end examples live in [`examples/`](examples/).
 
+## Connecting an instance elsewhere
+
+`admin.getSetupInstructions(instanceId)` and `instance.setupInstructions()` both return an
+`AgentSetupResult`: how to reach the same memory from another agent surface, ordered
+most-likely-first. Available on either handle, because the MCP instance connection serves
+the same tool.
+
+```ts
+const setup = await inst.setupInstructions();
+for (const surface of setup.surfaces) {
+  console.log(surface.label);
+  for (const step of surface.steps) console.log(" ", step.description, step.command ?? "");
+}
+```
+
+Two formats. The default, `SetupFormat.AGENT`, answers *what do I run right now, here*.
+`SetupFormat.PROJECT` also returns the files a team commits once, so nobody sets the
+instance up by hand:
+
+```ts
+const setup = await inst.setupInstructions({ format: SetupFormat.PROJECT });
+if (setup.format === SetupFormat.PROJECT) {
+  for (const f of setup.project?.fragments ?? []) {
+    console.log(f.path, f.merge); // a merge, never a file to overwrite
+  }
+}
+```
+
+**Read `setup.format` rather than assuming.** A server older than that parameter ignores
+it, answers 200, and names no format at all — so `undefined` means *this deployment
+predates the project rendering*. That is a deliberate difference from the Python client,
+whose model applies an `AGENT` default; there is no runtime normalization point here, and
+inventing one would report a format the server never claimed.
+
+Nothing returned carries a credential: the steps tell a reader to sign in themselves, out
+of band, so an instance id stays an identifier rather than a key.
+
+Advisory values — `step.kind`, `fragment.merge`, `format` — are widened to accept a value
+added to the server after this release, so an additive change does not become a breaking
+one. A `step.kind` you do not recognise is not something to execute.
+
 ## Error handling
 
 All errors throw `XmemoryAPIError`. Health check failures throw `XmemoryHealthCheckError` (a subclass).

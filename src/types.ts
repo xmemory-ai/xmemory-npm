@@ -783,3 +783,145 @@ export function buildInstanceSchema(
   }
   return { json_schema: { value: schemaText } };
 }
+
+/**
+ * Which rendering of an instance's setup to ask for.
+ *
+ * `AGENT` answers "what do I run right now, here". `PROJECT` answers "what do I
+ * commit so my team does not each run it by hand" — the same instance, but the
+ * output is files rather than steps.
+ */
+export const SetupFormat = {
+  AGENT: "agent",
+  PROJECT: "project",
+} as const;
+
+export type SetupFormatValue = (typeof SetupFormat)[keyof typeof SetupFormat];
+
+/**
+ * What kind of thing `AgentSetupStep.command` is.
+ *
+ * The field carries three different things — a shell command, an in-session slash
+ * command, and a bare URL — so a caller that runs all of them in a shell will try to
+ * execute a connector URL. Check this before running anything.
+ */
+export const StepKind = {
+  SHELL: "shell",
+  SLASH: "slash",
+  URL: "url",
+} as const;
+
+export type StepKindValue = (typeof StepKind)[keyof typeof StepKind];
+
+/**
+ * How a fragment combines with a file the repository may already have.
+ *
+ * Every fragment is a merge, never a file to overwrite: a repository that already has
+ * a `.claude/settings.json` has permissions, hooks and directory trust in it, and
+ * replacing it wholesale to add two keys destroys that. Both merges are idempotent —
+ * applying a fragment twice must leave the file as one application would, so an
+ * applier that *appends* is implementing neither.
+ */
+export const FragmentMerge = {
+  MERGE_JSON: "merge_json",
+  MERGE_TOML: "merge_toml",
+} as const;
+
+export type FragmentMergeValue = (typeof FragmentMerge)[keyof typeof FragmentMerge];
+
+/** One action, with the command that performs it where there is one. */
+export interface AgentSetupStep {
+  readonly description: string;
+  readonly command?: string | null;
+  /**
+   * Absent rather than guessed where the server names no kind, which is also what an
+   * older server sends. Read the absence as "not known to be a shell command".
+   *
+   * Widened with `(string & {})` so a kind added after this release is still typed,
+   * while the known values keep their autocomplete. A kind you do not recognise is not
+   * executable: this field exists because the command may be a slash command or a bare
+   * URL, so running an unknown kind in a shell is the mistake it prevents.
+   */
+  readonly kind?: StepKindValue | (string & {}) | null;
+}
+
+/** How to connect this instance from one agent surface. */
+export interface AgentSetupSurface {
+  /**
+   * Deliberately a plain string rather than `AgentSurfaceValue`: a server newer than
+   * this release can name a surface it has never heard of, and narrowing the type here
+   * would make every new surface a breaking change for every older client.
+   */
+  readonly surface: string;
+  readonly label: string;
+  readonly steps: AgentSetupStep[];
+  /**
+   * What a person still has to do themselves — approve a command, complete a browser
+   * sign-in, trust a hook. Relay these: they are the consent the flow depends on.
+   */
+  readonly human_steps: string[];
+}
+
+/** One file a customer commits so their teammates do not each set this up. */
+export interface ProjectFragment {
+  readonly path: string;
+  readonly purpose: string;
+  /**
+   * Widened like `AgentSetupStep.kind`: a merge strategy added after this release is
+   * still typed. One you do not recognise cannot be applied safely — leave the file
+   * alone and surface the fragment as a manual step.
+   */
+  readonly merge: FragmentMergeValue | (string & {});
+  readonly content: string;
+}
+
+/**
+ * The committable half of an instance's setup.
+ *
+ * `manual_steps` is not a leftover: a surface with no committable channel is not the
+ * same as one that was forgotten, and a payload that silently omitted it would read as
+ * the latter.
+ */
+export interface ProjectSetup {
+  readonly fragments: ProjectFragment[];
+  readonly manual_steps: string[];
+}
+
+/**
+ * How to connect one instance, ordered for where it is likely to be used.
+ *
+ * The same payload the server's create response carries, the `get_setup_instructions`
+ * MCP tools serve and `xmemcli instance setup` prints. (This client's
+ * `admin.createInstance()` returns an `InstanceHandle` rather than that payload — call
+ * one of the setup methods for it.)
+ *
+ * **Carries no credential.** The steps tell a reader to sign in themselves, out of
+ * band, precisely so a key never lands in a transcript.
+ */
+export interface AgentSetupResult {
+  readonly instance_id: string;
+  readonly instance_name: string;
+  readonly install_page_url: string;
+  /**
+   * Ordered most-likely-first, never filtered: a hint about where an instance will be
+   * used is not a restriction on where it may be.
+   */
+  readonly surfaces: AgentSetupSurface[];
+  /** One line to paste into an agent instead of running anything by hand. */
+  readonly paste_to_agent: string;
+  /**
+   * What the server actually rendered, which is not always what was asked for: a
+   * server older than the `format` parameter ignores it and still answers 200, so a
+   * caller asking for `PROJECT` can receive the agent payload with no error at all.
+   * Compare this against what you requested rather than inferring from `project`
+   * being absent.
+   *
+   * Optional rather than defaulted, because those older servers name no format at all
+   * and `undefined` is the useful signal: *this deployment predates the project
+   * rendering*. Defaulting it to `AGENT` here would report a format the server never
+   * claimed, and hide the one case a caller has to branch on.
+   */
+  readonly format?: SetupFormatValue | (string & {});
+  /** Present only when `format=project` was both requested and honoured. */
+  readonly project?: ProjectSetup | null;
+}

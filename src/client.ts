@@ -4,6 +4,7 @@
 
 import { InstanceHandle } from "./instance.js";
 import {
+  type AgentSetupResult,
   type ApiError,
   type ClusterInfo,
   type CreateInstanceOptions,
@@ -24,6 +25,8 @@ import {
   type RawApiResponse,
   type RequestOptions,
   type SchemaTypeValue,
+  SetupFormat,
+  type SetupFormatValue,
   type UpdateInstanceMetadataOptions,
   type UpdateInstanceSchemaOptions,
   type XmemoryClientOptions,
@@ -107,6 +110,23 @@ export interface AdminNamespace {
   ): Promise<InstanceHandle>;
   listInstances(options?: RequestOptions & { ids?: string[] }): Promise<InstanceInfo[]>;
   getInstance(instanceId: string, options?: RequestOptions): Promise<InstanceInfo>;
+  /**
+   * How to connect this instance on an agent surface, most likely first.
+   *
+   * Answers "how do I also reach this memory somewhere else" — a desktop client,
+   * another editor, a teammate's machine — rather than how to reach it from here.
+   *
+   * **Carries no credential.** The steps tell a reader to sign in themselves, out of
+   * band, so an instance id stays an identifier rather than a key.
+   *
+   * `format: SetupFormat.PROJECT` additionally returns the files a customer commits so
+   * a whole team gets this instance. Check `format` on the result: a server older than
+   * that parameter ignores it and still answers 200, so asking is not receiving.
+   */
+  getSetupInstructions(
+    instanceId: string,
+    options?: RequestOptions & { format?: SetupFormatValue },
+  ): Promise<AgentSetupResult>;
   deleteInstance(instanceId: string, options?: RequestOptions): Promise<string[]>;
   getInstanceSchema(instanceId: string, options?: RequestOptions): Promise<InstanceSchemaInfo>;
   updateInstanceSchema(
@@ -368,6 +388,13 @@ export class XmemoryClient {
 
       getInstance: async (instanceId, options?) => {
         return this._requestOne<InstanceInfo>("GET", `/instances/${instanceId}`, {
+          timeoutMs: options?.timeoutMs,
+        });
+      },
+
+      getSetupInstructions: async (instanceId, options?) => {
+        return this._requestOne<AgentSetupResult>("GET", `/instances/${instanceId}/agent_setup`, {
+          params: { format: options?.format ?? SetupFormat.AGENT },
           timeoutMs: options?.timeoutMs,
         });
       },

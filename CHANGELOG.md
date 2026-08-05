@@ -2,6 +2,39 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.5.0
+
+Adds the connect instructions for an instance — how to reach the same memory from
+another agent surface — which the API, the MCP tools and `xmemcli instance setup`
+already served and the SDKs did not.
+
+### Added
+
+- `admin.getSetupInstructions(instanceId)` and `instance.setupInstructions()`. On both
+  because the MCP instance connection serves the same tool, so a caller holding an
+  instance handle should not have to reach through `admin`.
+- `format: SetupFormat.PROJECT` additionally returns the files a customer commits so a
+  whole team gets an instance without each person running the steps by hand. Read
+  `format` on the result: a server older than that parameter ignores it and still
+  answers 200, so asking is not the same as receiving.
+- New exports: `AgentSetupResult`, `AgentSetupSurface`, `AgentSetupStep`, `ProjectSetup`,
+  `ProjectFragment`, `SetupFormat`, `StepKind`, `FragmentMerge`, and their value types.
+
+### Notes
+
+Nothing returned carries a credential: the steps tell a reader to sign in themselves,
+out of band, so an instance id remains an identifier rather than a key.
+
+Advisory values tolerate what this release has not heard of: `AgentSetupSurface.surface`
+is a plain `string`, and `AgentSetupStep.kind`, `ProjectFragment.merge` and `format` are
+widened so a value added to the server later is still typed. A `kind` you do not
+recognise is not executable.
+
+An omitted `format` stays `undefined` rather than defaulting to `AGENT`: that is the
+signal a server predates the project rendering. This differs deliberately from the Python
+client, which applies the default in its model — there is no runtime normalization point
+here, and inventing one would report a format the server never claimed.
+
 ## 3.4.0
 
 Surfaces the agent-facing instance metadata the API already returns: what a

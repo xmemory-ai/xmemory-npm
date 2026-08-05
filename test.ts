@@ -4,6 +4,10 @@ import {
   XmemoryClient,
   XmemoryAPIError,
   XmemoryHealthCheckError,
+  SetupFormat,
+  StepKind,
+  FragmentMerge,
+  type StepKindValue,
   InstanceHandle,
   xmemoryInstance,
   SchemaType,
@@ -42,6 +46,8 @@ check("admin.getInstanceSchema", typeof client.admin.getInstanceSchema === "func
 check("admin.updateInstanceSchema", typeof client.admin.updateInstanceSchema === "function");
 check("admin.updateInstanceMetadata", typeof client.admin.updateInstanceMetadata === "function");
 check("admin.patchInstanceMetadata", typeof client.admin.patchInstanceMetadata === "function");
+check("admin.getSetupInstructions", typeof client.admin.getSetupInstructions === "function");
+check("instance.setupInstructions", typeof client.instance("i").setupInstructions === "function");
 check("admin.generateSchema", typeof client.admin.generateSchema === "function");
 
 // instance() returns InstanceHandle with correct id
@@ -1092,6 +1098,110 @@ async function captureRequest(
   check("describe: usageBrief defaults to null", result.usageBrief === null);
   check("asText renders no empty purpose heading", !result.asText().includes("Purpose"));
   check("asText renders no empty provenance label", !result.asText().includes("edit access"));
+}
+
+
+// ---------------------------------------------------------------------------
+// Test: connect instructions — the query, the parse, and what survives a newer server
+// ---------------------------------------------------------------------------
+
+{
+  let capturedUrl = "";
+  // A server older than the `format` parameter omits the field entirely rather than
+  // echoing a value. Toggled so the omission is actually exercised: a mock that always
+  // echoes "agent" makes the assertion below pass without the client doing anything.
+  let echoFormat = true;
+  let echoProject = false;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url) => {
+    capturedUrl = url;
+    if (url.endsWith("/healthz")) return { status: 200, body: {} };
+    return {
+      status: 200,
+      body: {
+        items: [
+          {
+            instance_id: "i1",
+            instance_name: "Sprint tracker",
+            install_page_url: "https://xmemory.ai/install",
+            // A surface this release has never heard of, plus a field from a newer
+            // server: neither may break the parse, or an additive server change
+            // becomes a breaking client change.
+            surfaces: [
+              {
+                surface: "some_future_client",
+                label: "Future",
+                steps: [{ description: "Install it.", command: "x install", kind: "shell" }],
+                human_steps: ["Approve each command when the agent asks to run it."],
+              },
+            ],
+            paste_to_agent: "Connect xmemory instance i1",
+            ...(echoProject
+              ? {
+                  format: "project",
+                  project: {
+                    fragments: [
+                      { path: ".mcp.json", purpose: "point the team at it", merge: "merge_json", content: "{}" },
+                    ],
+                    manual_steps: ["Each teammate signs in once."],
+                  },
+                }
+              : echoFormat
+                ? { format: "agent" }
+                : {}),
+            unknown_field_from_a_newer_server: true,
+          },
+        ],
+      },
+    };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+
+  const setup = await c.admin.getSetupInstructions("i1");
+  check("setup: asks for the agent format by default", capturedUrl.includes("format=agent"));
+  check("setup: parses the payload", setup.instance_name === "Sprint tracker");
+  check("setup: unknown surface survives", setup.surfaces[0]!.surface === "some_future_client");
+  check("setup: step kind is readable", setup.surfaces[0]!.steps[0]!.kind === StepKind.SHELL);
+  // Consent, not decoration: a caller that drops these hides what a person must do.
+  check("setup: human steps are carried", setup.surfaces[0]!.human_steps.length === 1);
+
+  // An honoured project response, so the PROJECT contract is bound rather than only the
+  // query string: a server could receive the parameter and still return the agent shape.
+  echoProject = true;
+  const project = await c.admin.getSetupInstructions("i1", { format: SetupFormat.PROJECT });
+  check("setup: project format reaches the query", capturedUrl.includes("format=project"));
+  check("setup: honoured project reports its format", project.format === SetupFormat.PROJECT);
+  check("setup: project carries fragments", project.project?.fragments.length === 1);
+  check("setup: fragment merge is readable", project.project?.fragments[0]!.merge === FragmentMerge.MERGE_JSON);
+  check("setup: fragment names its path", project.project?.fragments[0]!.path === ".mcp.json");
+  // Not a leftover: a surface with no committable channel is not one that was forgotten.
+  check("setup: project carries manual steps", (project.project?.manual_steps.length ?? 0) === 1);
+  echoProject = false;
+
+  // A server older than the parameter ignores it, answers 200, and names no format.
+  // `undefined` is therefore the signal "this server predates the project rendering" —
+  // which is exactly what a caller needs, and why the field is optional rather than
+  // defaulted to AGENT. Note this diverges from the Python client, whose model applies
+  // the AGENT default; there is no runtime normalization point here, and inventing one
+  // would report a format the server never claimed.
+  echoFormat = false;
+  const stale = await c.admin.getSetupInstructions("i1", { format: SetupFormat.PROJECT });
+  check("setup: an older server names no format", stale.format === undefined);
+  check("setup: and offers no project payload", stale.project == null);
+  echoFormat = true;
+
+  // Advisory values a newer server may send. There is no runtime validation here, so
+  // what this pins is that the *types* admit them: the Python client rejected the whole
+  // payload over exactly this before review caught it.
+  const unknownKind: StepKindValue | (string & {}) | null | undefined =
+    setup.surfaces[0]!.steps[0]!.kind;
+  check("setup: an unknown kind is still typed", unknownKind === StepKind.SHELL);
+
+  const viaHandle = await c.instance("i1").setupInstructions();
+  check("setup: reachable from an instance handle", viaHandle.instance_id === "i1");
+
+  globalThis.fetch = origFetch;
 }
 
 // ---------------------------------------------------------------------------
