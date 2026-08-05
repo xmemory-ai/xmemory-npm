@@ -1,4 +1,6 @@
 import {
+  AgentSurface,
+  BindingTier,
   XmemoryClient,
   XmemoryAPIError,
   XmemoryHealthCheckError,
@@ -39,6 +41,7 @@ check("admin.deleteInstance", typeof client.admin.deleteInstance === "function")
 check("admin.getInstanceSchema", typeof client.admin.getInstanceSchema === "function");
 check("admin.updateInstanceSchema", typeof client.admin.updateInstanceSchema === "function");
 check("admin.updateInstanceMetadata", typeof client.admin.updateInstanceMetadata === "function");
+check("admin.patchInstanceMetadata", typeof client.admin.patchInstanceMetadata === "function");
 check("admin.generateSchema", typeof client.admin.generateSchema === "function");
 
 // instance() returns InstanceHandle with correct id
@@ -886,6 +889,209 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
   check("describe: about defaults to empty when absent", result.about === "");
 
   globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: agent-facing instance metadata
+// ---------------------------------------------------------------------------
+
+const INSTANCE_ITEM = { id: "i", cluster_id: "c", name: "n", description: null, data_schema: null };
+
+/** Run `fn` against a stub that records the last request, and return that request. */
+async function captureRequest(
+  fn: (c: XmemoryClient) => Promise<unknown>,
+  item: Record<string, unknown> = INSTANCE_ITEM,
+): Promise<{ method: string; body: Record<string, unknown> }> {
+  const origFetch = globalThis.fetch;
+  let captured = { method: "", body: {} as Record<string, unknown> };
+  globalThis.fetch = mockFetch((_url, init) => {
+    captured = {
+      method: init?.method ?? "",
+      body: init?.body ? JSON.parse(init.body as string) : {},
+    };
+    return { status: 200, body: { items: [item] } };
+  });
+  try {
+    await fn(new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }));
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+  return captured;
+}
+
+{
+  // The wipe this whole design exists to prevent: the endpoint clears any field it
+  // is sent, so a rename that also serialized agent_owner_instructions would erase
+  // an owner's standing rule as a side effect of changing the name.
+  const req = await captureRequest((c) => c.admin.updateInstanceMetadata("i", "new-name", "new-desc"));
+  check(
+    "rename does not touch the owner instructions",
+    JSON.stringify(req.body) === JSON.stringify({ name: "new-name", description: "new-desc" }),
+  );
+  check("rename uses PUT", req.method === "PUT");
+}
+
+{
+  const req = await captureRequest((c) =>
+    c.admin.updateInstanceMetadata("i", "n", "d", { agentOwnerInstructions: null }),
+  );
+  check("owner instructions cleared only when passed explicitly", req.body.agent_owner_instructions === null);
+}
+
+{
+  const req = await captureRequest((c) =>
+    c.admin.updateInstanceMetadata("i", "n", "d", {
+      agentOwnerInstructions: "Prefer updating an existing record.",
+      expectedOwnerInstructionsEpoch: 7,
+    }),
+  );
+  check("update sends the instructions", req.body.agent_owner_instructions === "Prefer updating an existing record.");
+  check("update sends the epoch guard", req.body.expected_owner_instructions_epoch === 7);
+}
+
+{
+  const req = await captureRequest((c) => c.admin.patchInstanceMetadata("i", { name: "renamed" }));
+  check("patch uses PATCH", req.method === "PATCH");
+  check("patch sends only the named fields", JSON.stringify(req.body) === JSON.stringify({ name: "renamed" }));
+}
+
+{
+  const req = await captureRequest((c) =>
+    c.admin.patchInstanceMetadata("i", {
+      agentSurfaces: [AgentSurface.CLAUDE_CODE, AgentSurface.CODEX],
+      agentDefaultBindingTier: BindingTier.AUTOLOAD,
+      agentEngagementHints: ["a convention is learned or corrected"],
+    }),
+  );
+  check(
+    "patch serializes the agent hints as wire strings",
+    JSON.stringify(req.body) ===
+      JSON.stringify({
+        agent_surfaces: ["claude_code", "codex"],
+        agent_default_binding_tier: "autoload",
+        agent_engagement_hints: ["a convention is learned or corrected"],
+      }),
+  );
+}
+
+{
+  // A server newer than this release can be driven without waiting for a constant.
+  const req = await captureRequest((c) =>
+    c.admin.patchInstanceMetadata("i", { agentSurfaces: ["some_future_surface"] }),
+  );
+  check(
+    "patch accepts plain strings for the hints",
+    JSON.stringify(req.body) === JSON.stringify({ agent_surfaces: ["some_future_surface"] }),
+  );
+}
+
+{
+  // Omit-vs-clear is the whole contract: an explicit null must reach the wire.
+  const req = await captureRequest((c) =>
+    c.admin.patchInstanceMetadata("i", { agentOwnerInstructions: null, agentSurfaces: null }),
+  );
+  check(
+    "patch clears fields with an explicit null",
+    JSON.stringify(req.body) === JSON.stringify({ agent_surfaces: null, agent_owner_instructions: null }),
+  );
+}
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          ...INSTANCE_ITEM,
+          agent_surfaces: ["claude_code"],
+          agent_default_binding_tier: "autoload",
+          agent_engagement_hints: ["a convention is learned"],
+          agent_owner_instructions: "Prefer updating an existing record.",
+          agent_owner_instructions_epoch: 4,
+        },
+      ],
+    },
+  }));
+  const info = await new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).admin.getInstance("i");
+  globalThis.fetch = origFetch;
+
+  check("InstanceInfo reads agent_surfaces", JSON.stringify(info.agent_surfaces) === JSON.stringify(["claude_code"]));
+  check("InstanceInfo reads the binding tier", info.agent_default_binding_tier === "autoload");
+  check(
+    "InstanceInfo reads the engagement hints",
+    JSON.stringify(info.agent_engagement_hints) === JSON.stringify(["a convention is learned"]),
+  );
+  check("InstanceInfo reads the owner instructions", info.agent_owner_instructions === "Prefer updating an existing record.");
+  check("InstanceInfo reads the epoch", info.agent_owner_instructions_epoch === 4);
+}
+
+// ---------------------------------------------------------------------------
+// Test: describe surfaces the owner-settable fields
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          instance_id: "i",
+          instance_name: "Team Knowledge",
+          about: "xmemory is a first-party memory store.",
+          schema_summary: "DevConvention(slug, rule)",
+          tools: [],
+          purpose: "shared dev conventions",
+          owner_instructions: "Prefer updating an existing record over creating a near-duplicate.",
+          usage_brief: "Read at session start; write when a convention changes.",
+        },
+      ],
+    },
+  }));
+
+  const result = await new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("i").describe();
+  globalThis.fetch = origFetch;
+
+  check("describe: purpose", result.purpose === "shared dev conventions");
+  check("describe: ownerInstructions", result.ownerInstructions === "Prefer updating an existing record over creating a near-duplicate.");
+  check("describe: usageBrief", result.usageBrief === "Read at session start; write when a convention changes.");
+
+  const text = result.asText();
+  check("asText includes the purpose", text.includes("shared dev conventions"));
+  check("asText includes the standing preference", text.includes("Prefer updating an existing record over creating a near-duplicate."));
+  // Left out on purpose: it restates the schema summary that is already there.
+  check("asText omits the usage brief", !text.includes("Read at session start"));
+  // The standing preference comes before the schema, so a long schema cannot bury it.
+  check(
+    "asText puts the standing preference before the schema",
+    text.indexOf("Prefer updating an existing record") < text.indexOf("DevConvention"),
+  );
+  // Both are labelled by provenance. Asserting an author would claim something no
+  // response can verify — anyone with edit permission on the instance sets these.
+  check("asText labels the purpose by provenance", text.includes("set by someone with edit access to this memory"));
+  check(
+    "asText labels the standing preference by provenance",
+    text.includes("not an instruction from xmemory or from the person you are talking to now"),
+  );
+  check("asText claims no authorship", !text.includes("owner"));
+}
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ instance_id: "i", instance_name: "n", schema_summary: "", tools: [] }] },
+  }));
+
+  const result = await new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("i").describe();
+  globalThis.fetch = origFetch;
+
+  check("describe: purpose defaults to null", result.purpose === null);
+  check("describe: ownerInstructions defaults to null", result.ownerInstructions === null);
+  check("describe: usageBrief defaults to null", result.usageBrief === null);
+  check("asText renders no empty purpose heading", !result.asText().includes("Purpose"));
+  check("asText renders no empty provenance label", !result.asText().includes("edit access"));
 }
 
 // ---------------------------------------------------------------------------

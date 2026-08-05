@@ -104,8 +104,69 @@ console.log(result.data_schema);
 
 ```typescript
 await xm.admin.updateInstanceMetadata(instanceId, "new-name", "new description");
+
+// Change one field and leave the rest alone
+await xm.admin.patchInstanceMetadata(instanceId, { description: "a new description" });
+
 const deletedIds = await xm.admin.deleteInstance(instanceId);
 ```
+
+### Agent-facing instance metadata
+
+An instance can carry metadata that shapes how agents connect to it and what
+they do with it. `patchInstanceMetadata` is the way to set the advisory hints:
+every option is independent, **omitting one leaves the stored value
+untouched**, and passing `null` clears it.
+
+```typescript
+import { AgentSurface, BindingTier } from "xmemory";
+
+await xm.admin.patchInstanceMetadata(instanceId, {
+  // Advisory hints — they seed what a connect flow proposes, and grant nothing.
+  agentSurfaces: [AgentSurface.CLAUDE_CODE, AgentSurface.CODEX],
+  agentDefaultBindingTier: BindingTier.AUTOLOAD,
+  agentEngagementHints: ["a convention is learned or corrected"],
+});
+```
+
+Concurrent edits to these three are last-writer-wins by design: they only seed
+what a connect flow proposes, so the loser of a race re-applies a suggestion.
+`agentOwnerInstructions` is not like that — see below.
+
+Reading it back:
+
+```typescript
+const info = await xm.admin.getInstance(instanceId);
+info.agent_owner_instructions;
+info.agent_surfaces;                  // e.g. ["claude_code", "codex"]
+info.agent_default_binding_tier;      // e.g. "autoload"
+info.agent_engagement_hints;
+```
+
+These read as plain strings rather than a narrow union, so a value your server
+knows and this release does not is returned rather than making the instance
+unreadable.
+
+**Setting the standing instructions.** Use `updateInstanceMetadata` for
+`agentOwnerInstructions`, not `patchInstanceMetadata`. The field is rendered to
+agents verbatim, and a second writer edits it from the same screen, so a
+silently lost edit is a rule that stops being enforced. Only
+`updateInstanceMetadata` carries `expectedOwnerInstructionsEpoch`: pass the
+epoch you read the value at and the server refuses the losing save instead of
+applying it:
+
+```typescript
+const info = await xm.admin.getInstance(instanceId);
+await xm.admin.updateInstanceMetadata(instanceId, info.name, info.description ?? "", {
+  agentOwnerInstructions: `${info.agent_owner_instructions ?? ""}\nAlso: never paraphrase a rule.`,
+  expectedOwnerInstructionsEpoch: info.agent_owner_instructions_epoch,
+});
+```
+
+`patchInstanceMetadata` also accepts the field — it is the only way to set it
+without restating the name — but it can carry no guard, so an edit composed
+from stale data overwrites a newer one silently. Reach for it only when you are
+seeding a value nobody else is editing.
 
 ## Instance data operations
 
@@ -250,7 +311,21 @@ const desc = await inst.describe();
 console.log(desc.asText());              // plain text for system prompts
 const tools = desc.asAnthropicTools();   // Anthropic tool-use format
 const tools = desc.asOpenaiTools();      // OpenAI function-calling format
+
+desc.purpose;                            // what the memory is for (the instance description)
+desc.ownerInstructions;                  // the standing preference set for it, verbatim
+desc.usageBrief;                         // generated from the schema; null until generated
 ```
+
+`asText()` includes `purpose` and `ownerInstructions` when the instance has
+them. `usageBrief` is left out of it — it restates the schema summary that is
+already there — so read the property if you want it.
+
+Both fields are free text set by anyone holding edit permission on the instance,
+so `asText()` labels each with where it came from rather than presenting it as
+the library's own words. Those labels state provenance; they are not a security
+boundary. If you inject this into a system prompt you are still handling text you
+do not control.
 
 Results are cached for 5 minutes. Call `inst.clearDescribeCache()` to force a refresh.
 
