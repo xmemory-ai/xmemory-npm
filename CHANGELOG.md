@@ -2,6 +2,30 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.6.0
+
+Surfaces the console link the API has always sent with every data operation and this
+client dropped.
+
+### Added
+
+- `console_url` on `ReadResult`, `WriteResult`, `AsyncWriteResult`, `WriteStatusResult`
+  and `ExtractResult` — the deep link to that operation's trace in the xmemory console.
+  `AsyncWriteResult` gains `trace_id` in the same pass: the fire-and-forget path this
+  client recommends for writes was the one with no way to point at what it did.
+
+### Notes
+
+The link is per operation, not per record, and it is `null` when the server has no
+console configured. The wire omits the field entirely in that case, so each method
+normalizes the absence — a caller comparing against `null` would otherwise be reading
+`undefined` on exactly the deployments that have no link.
+
+Why it matters beyond convenience: the one instruction xmemory ships about how an agent
+should talk about recalled data asks it to name the record an answer rests on and link
+the read that produced it. Through this client that was not followable without
+rebuilding the URL from a trace id and a hostname the library never disclosed.
+
 ## 3.5.0
 
 Adds the connect instructions for an instance — how to reach the same memory from

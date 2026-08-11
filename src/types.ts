@@ -186,8 +186,16 @@ export interface TaggedReaderResult {
   readonly error: string | null;
 }
 
+// `console_url` appears on every result below. It is the deep link to that operation's
+// trace in the xmemory console — per operation, not per record — and it is `null` when
+// the server has no console configured. The wire omits the field entirely in that case;
+// each method normalizes the absence so callers never have to tell `undefined` from
+// `null`.
+
 export interface ReadResult {
   readonly trace_id: string | null;
+  /** Deep link to this read's trace in the console; `null` if no console is configured. */
+  readonly console_url: string | null;
   readonly reader_result: unknown;
   /**
    * Per-sub-query answers when the server decomposed the query into independent
@@ -203,23 +211,33 @@ export interface ReadResult {
 export interface WriteResult {
   readonly write_id: string;
   readonly trace_id: string | null;
+  /** Deep link to this write's trace in the console; `null` if no console is configured. */
+  readonly console_url: string | null;
   /** What the write did, grouped into `created` / `updated` / `deleted`. */
   readonly changes: unknown;
 }
 
 export interface AsyncWriteResult {
   readonly write_id: string;
+  /** Trace id for the queued write, echoed by the server; `null` if it sent none. */
+  readonly trace_id: string | null;
+  /** Deep link to this write's trace in the console; `null` if no console is configured. */
+  readonly console_url: string | null;
 }
 
 export interface WriteStatusResult {
   readonly write_id: string;
   readonly write_status: WriteQueueStatus;
+  /** Deep link to the underlying write's trace; `null` if no console is configured. */
+  readonly console_url: string | null;
   readonly error_detail: string | null;
   readonly completed_at: string | null;
 }
 
 export interface ExtractResult {
   readonly trace_id: string | null;
+  /** Deep link to this extraction's trace in the console; `null` if no console is configured. */
+  readonly console_url: string | null;
   readonly objects_extracted: unknown;
 }
 
