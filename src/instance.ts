@@ -208,6 +208,18 @@ function buildJsonSchemaProps(params: readonly ToolParameterDescription[]): {
   return { properties, required };
 }
 
+/**
+ * Normalize a missing `console_url` to `null`.
+ *
+ * The server omits the field rather than sending null when no console is configured,
+ * so without this a caller comparing against `null` would be reading `undefined` on
+ * exactly the deployments that have no link — the case the comparison exists for.
+ * Same treatment `read` already gives `reader_results`.
+ */
+function withConsoleUrl<T extends { console_url?: string | null }>(result: T): T & { console_url: string | null } {
+  return { ...result, console_url: result.console_url ?? null };
+}
+
 export class InstanceHandle {
   readonly id: string;
   private readonly _requestOne: RequestOneFn;
@@ -240,13 +252,14 @@ export class InstanceHandle {
     // The wire shape omits `reader_results` on a server without question
     // decomposition, so type it as optional here and normalize to an always-array
     // for the public `ReadResult` below.
-    const result = await this._requestOne<Omit<ReadResult, "reader_results"> & {
+    const result = await this._requestOne<Omit<ReadResult, "reader_results" | "console_url"> & {
       reader_results?: readonly TaggedReaderResult[];
+      console_url?: string | null;
     }>("POST", `/instances/${this.id}/read`, {
       body,
       timeoutMs: options?.timeoutMs,
     });
-    return { ...result, reader_results: result.reader_results ?? [] };
+    return withConsoleUrl({ ...result, reader_results: result.reader_results ?? [] });
   }
 
   /**
@@ -261,10 +274,13 @@ export class InstanceHandle {
   async write(text: string, options?: WriteOptions): Promise<WriteResult>;
   async write(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<WriteResult>;
   async write(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<WriteResult> {
-    return this._requestOne<WriteResult>("POST", `/instances/${this.id}/write`, {
-      body: buildWriteBody(input, options),
-      timeoutMs: options?.timeoutMs,
-    });
+    return withConsoleUrl(
+      await this._requestOne<Omit<WriteResult, "console_url"> & { console_url?: string | null }>(
+        "POST",
+        `/instances/${this.id}/write`,
+        { body: buildWriteBody(input, options), timeoutMs: options?.timeoutMs },
+      ),
+    );
   }
 
   /**
@@ -274,17 +290,26 @@ export class InstanceHandle {
   async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult>;
   async writeAsync(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<AsyncWriteResult>;
   async writeAsync(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<AsyncWriteResult> {
-    return this._requestOne<AsyncWriteResult>("POST", `/instances/${this.id}/write_async`, {
+    const result = await this._requestOne<Omit<AsyncWriteResult, "trace_id" | "console_url"> & {
+      trace_id?: string | null;
+      console_url?: string | null;
+    }>("POST", `/instances/${this.id}/write_async`, {
       body: buildWriteBody(input, options),
       timeoutMs: options?.timeoutMs,
     });
+    // `trace_id` is normalized here as well because this result declares it for the
+    // first time, and the wire omits it exactly as it omits the console link.
+    return withConsoleUrl({ ...result, trace_id: result.trace_id ?? null });
   }
 
   async writeStatus(writeId: string, options?: RequestOptions): Promise<WriteStatusResult> {
-    return this._requestOne<WriteStatusResult>("POST", `/instances/${this.id}/write_status`, {
-      body: { write_id: writeId },
-      timeoutMs: options?.timeoutMs,
-    });
+    return withConsoleUrl(
+      await this._requestOne<Omit<WriteStatusResult, "console_url"> & { console_url?: string | null }>(
+        "POST",
+        `/instances/${this.id}/write_status`,
+        { body: { write_id: writeId }, timeoutMs: options?.timeoutMs },
+      ),
+    );
   }
 
   async extract(text: string, options?: ExtractOptions): Promise<ExtractResult> {
@@ -292,10 +317,13 @@ export class InstanceHandle {
       text,
       extraction_logic: options?.extractionLogic ?? "fast",
     };
-    return this._requestOne<ExtractResult>("POST", `/instances/${this.id}/extract`, {
-      body,
-      timeoutMs: options?.timeoutMs,
-    });
+    return withConsoleUrl(
+      await this._requestOne<Omit<ExtractResult, "console_url"> & { console_url?: string | null }>(
+        "POST",
+        `/instances/${this.id}/extract`,
+        { body, timeoutMs: options?.timeoutMs },
+      ),
+    );
   }
 
   async getSchema(options?: RequestOptions): Promise<InstanceSchemaInfo> {

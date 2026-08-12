@@ -184,7 +184,12 @@ Extract and store structured objects from text:
 const result = await inst.write("Bob is a designer based in Berlin.");
 console.log(result.write_id, result.trace_id);
 console.log(result.changes); // what the write created / updated / deleted
+console.log(result.console_url); // this operation's trace in the console, or null
 ```
+
+Every data operation — `read`, `write`, `writeAsync`, `writeStatus`, `extract` — carries
+`console_url`, the deep link to that call's trace. It is per operation rather than per
+record, and `null` when the server has no console configured.
 
 Options: `{ extractionLogic?, diffEngine?, timeoutMs? }` — `extractionLogic` defaults to `"fast"`.
 

@@ -348,6 +348,69 @@ function mockFetch(
 }
 
 // ---------------------------------------------------------------------------
+// Test: every data operation surfaces its console link
+//
+// The API has always sent `console_url`; this client dropped it, so pointing at what
+// a call did meant rebuilding the URL from a trace id and a hostname the library
+// never disclosed.
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  const link = "https://console.xmemory.ai/write/w-1";
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          write_id: "w-1",
+          trace_id: "t-1",
+          console_url: link,
+          write_status: "completed",
+          reader_result: "An engineer",
+          objects_extracted: { objects: [] },
+        },
+      ],
+    },
+  }));
+
+  const inst = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("inst-1");
+  check("read carries its console link", (await inst.read("Who is Bob?")).console_url === link);
+  check("write carries its console link", (await inst.write("Bob is an engineer.")).console_url === link);
+  check("async write carries its console link", (await inst.writeAsync("Bob.")).console_url === link);
+  check("async write carries its trace id", (await inst.writeAsync("Bob.")).trace_id === "t-1");
+  check("write status carries its console link", (await inst.writeStatus("w-1")).console_url === link);
+  check("extract carries its console link", (await inst.extract("Bob is an engineer.")).console_url === link);
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: no console configured => the link normalizes to null, not undefined
+//
+// The server omits the field rather than sending null, so a caller comparing against
+// null would otherwise read undefined on exactly the deployments that have no link.
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ write_id: "w-1", reader_result: "An engineer", objects_extracted: { objects: [] } }] },
+  }));
+
+  const inst = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("inst-1");
+  check("read reports no link as null", (await inst.read("Who is Bob?")).console_url === null);
+  check("write reports no link as null", (await inst.write("Bob.")).console_url === null);
+  check("async write reports no link as null", (await inst.writeAsync("Bob.")).console_url === null);
+  check("async write reports no trace id as null", (await inst.writeAsync("Bob.")).trace_id === null);
+  check("write status reports no link as null", (await inst.writeStatus("w-1")).console_url === null);
+  check("extract reports no link as null", (await inst.extract("Bob.")).console_url === null);
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
 // Test: RawApiResponse with missing fields (optional ids/items/errors)
 // ---------------------------------------------------------------------------
 
