@@ -392,7 +392,9 @@ export class InstanceHandle {
   }
 
   /**
-   * Return agent-facing tool descriptions enriched with the instance schema.
+   * Return the agent-facing tool descriptions for this instance.
+   *
+   * The instance's schema comes back in `DescribeResult.schemaSummary`.
    *
    * Results are cached locally with a TTL (default 5 min).
    * Call `clearDescribeCache()` to force a refresh.

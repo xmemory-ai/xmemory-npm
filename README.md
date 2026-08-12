@@ -309,7 +309,7 @@ console.log(schema.data_schema);
 
 ### `inst.describe(options?)` → `DescribeResult`
 
-Get agent-facing tool descriptions enriched with the instance's schema.
+Get the agent-facing tool descriptions for an instance, with its schema in `schemaSummary`.
 
 ```typescript
 const desc = await inst.describe();
