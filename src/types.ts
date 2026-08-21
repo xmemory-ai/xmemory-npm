@@ -14,15 +14,13 @@ export type ReadMode = "single-answer" | "raw-tables" | "xresponse";
 
 /**
  * One concrete object a scoped read or a scoped write may touch. Identify it by
- * `type` (PascalCase class name or snake_case table name) plus **exactly one**
- * of `key` — its user-defined primary key, with one entry per primary-key field
- * — or `xuid`, the object's xuid. The `xuid` form is the only way to name an
- * object whose type has no user-defined primary key.
+ * `type` (PascalCase class name or snake_case table name) plus its user-defined
+ * primary `key`, with one entry per primary-key field. Only objects of a type
+ * that has a user-defined primary key can be scoped.
  */
 export interface ScopeObject {
   type: string;
-  key?: Record<string, string | number | boolean>;
-  xuid?: string;
+  key: Record<string, string | number | boolean>;
 }
 
 /** Which relations a scoped read may traverse. */
