@@ -38,7 +38,7 @@ export type {
 } from "./types.js";
 
 // Scope
-export type { ScopeObject, ReadScope, RelationsScope } from "./types.js";
+export type { ScopeObject, ReadScope, WriteScope, RelationsScope } from "./types.js";
 
 // Options
 export type {

@@ -1268,6 +1268,93 @@ async function captureRequest(
 }
 
 // ---------------------------------------------------------------------------
+// Test: scoped writes — the WriteScope wire shape, both identity forms
+// ---------------------------------------------------------------------------
+
+{
+  let capturedBody: Record<string, unknown> = {};
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    return { status: 200, body: { items: [{ write_id: "w1", trace_id: "t1" }] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const inst = c.instance("test-inst");
+
+  await inst.write("After her promotion she is a surgeon.", {
+    scope: { objects: [{ type: "Person", key: { name: "Alice Johnson" } }] },
+  });
+  check(
+    "scoped write: primary-key identity nests as key.key",
+    JSON.stringify(capturedBody["scope"]) ===
+      JSON.stringify({ objects: [{ type: "Person", key: { key: { name: "Alice Johnson" } } }] }),
+  );
+  // WriteScope carries no relation policy: the relations among the scoped
+  // objects always accompany the extraction hint.
+  check(
+    "scoped write: no relations_scope key",
+    !("relations_scope" in (capturedBody["scope"] as Record<string, unknown>)),
+  );
+
+  await inst.writeAsync("She moved to the London office.", {
+    scope: { objects: [{ type: "Person", xuid: "3f2a" }] },
+  });
+  check(
+    "scoped writeAsync: xuid identity nests as key.xuid",
+    JSON.stringify(capturedBody["scope"]) ===
+      JSON.stringify({ objects: [{ type: "Person", key: { xuid: "3f2a" } }] }),
+  );
+
+  await inst.write("Bob is an engineer.");
+  check("unscoped write: no scope wire key", !("scope" in capturedBody));
+
+  // The same serializer backs scoped reads, so the xuid form works there too.
+  await inst.read("What does she do?", {
+    scope: { objects: [{ type: "Person", xuid: "3f2a" }] },
+  });
+  check(
+    "scoped read: xuid identity nests as key.xuid",
+    JSON.stringify((capturedBody["scope"] as Record<string, unknown>)["objects"]) ===
+      JSON.stringify([{ type: "Person", key: { xuid: "3f2a" } }]),
+  );
+
+  let neitherThrew = false;
+  try {
+    await inst.write("hello", { scope: { objects: [{ type: "Person" }] } });
+  } catch {
+    neitherThrew = true;
+  }
+  check("scope object with no identity throws", neitherThrew);
+
+  let bothThrew = false;
+  try {
+    await inst.write("hello", {
+      scope: { objects: [{ type: "Person", key: { name: "Alice" }, xuid: "3f2a" }] },
+    });
+  } catch {
+    bothThrew = true;
+  }
+  check("scope object with both identities throws", bothThrew);
+
+  // The overload types keep `scope` off the mutations form; this pins the
+  // runtime guard for a caller who reached the implementation signature anyway.
+  let structuredThrew = false;
+  try {
+    await (inst.write as (i: unknown, o: unknown) => Promise<unknown>)(
+      [{ object_mutation: { object_type: "person", delete: { key: { name: "Alice" } } } }],
+      { scope: { objects: [{ type: "Person", key: { name: "Alice" } }] } },
+    );
+  } catch {
+    structuredThrew = true;
+  }
+  check("scope with structured mutations throws", structuredThrew);
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
 
 if (errors.length > 0) {
   console.error("FAIL:", errors.join(", "));

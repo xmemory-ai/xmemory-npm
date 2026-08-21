@@ -191,7 +191,8 @@ Every data operation — `read`, `write`, `writeAsync`, `writeStatus`, `extract`
 `console_url`, the deep link to that call's trace. It is per operation rather than per
 record, and `null` when the server has no console configured.
 
-Options: `{ extractionLogic?, diffEngine?, timeoutMs? }` — `extractionLogic` defaults to `"fast"`.
+Options: `{ extractionLogic?, diffEngine?, scope?, timeoutMs? }` — `extractionLogic`
+defaults to `"fast"`; see [Scoped writes](#scoped-writes) for `scope`.
 
 Or pass a `WriteMutation[]` for **structured writes** — deterministic, LLM-free
 create/update/delete mutations applied in array order (later mutations may
@@ -219,8 +220,9 @@ Options for the mutations form: `{ timeoutMs? }` (extraction options don't apply
 
 ### `inst.writeAsync(text | mutations, options?)` → `AsyncWriteResult`
 
-Start an asynchronous write (same text / `WriteMutation[]` dual input as
-`inst.write`). Returns a `write_id` for tracking.
+Start an asynchronous write (same text / `WriteMutation[]` dual input and the
+same options as `inst.write`, `scope` included). Returns a `write_id` for
+tracking; a scope violation is reported by `inst.writeStatus` as a failed write.
 
 ```typescript
 const { write_id } = await inst.writeAsync("Carol manages the London office.");
@@ -272,8 +274,10 @@ records you care about, or for keeping a per-user / per-entity read from leaking
 into unrelated data.
 
 Each object in the scope is identified by its `type` (the PascalCase class name
-or snake_case table name) plus its user-defined primary `key` (a mapping of
-primary-key field name to value):
+or snake_case table name) plus **exactly one** of `key` — its user-defined
+primary key, a mapping of primary-key field name to value — or `xuid`, the
+object's xuid. The `xuid` form is the only way to name an object whose type has
+no user-defined primary key:
 
 ```typescript
 const result = await inst.read("What do we know about these people?", {
@@ -290,6 +294,54 @@ const result = await inst.read("What do we know about these people?", {
 `relationsScope` controls relation traversal: `"no_relations"` (the default)
 restricts the read to the listed objects only, while `"all_relations"` also
 exposes the relations among the in-scope objects.
+
+#### Scoped writes
+
+A write is normally free to touch anything in the instance: the extractor sees
+the text alone, and whatever it produces is reconciled against the whole
+instance. Pass a `scope` to anchor a text write to a set of concrete existing
+objects instead — the same `ScopeObject` shape as a scoped read:
+
+```typescript
+const result = await inst.write(
+  "After her promotion she is a surgeon, and her desk phone is +1-555-0100.",
+  { scope: { objects: [{ type: "Person", key: { full_name: "Alice Smith" } }] } },
+);
+```
+
+This does two things at once. The scoped objects' **current values** are shown
+to the extractor, so the new information is folded into them instead of
+producing a near-duplicate record. And the write is then **confined** to the
+scope: it may only modify or delete the scoped objects, and create new objects
+and relations anchored to them. A write that would touch any other existing
+object fails with a validation error rather than applying partially — that
+confinement is checked against the resulting plan, so it holds regardless of
+what the extractor produced.
+
+The `xuid` form works here too, which is what you need for an object whose type
+has no primary key:
+
+```typescript
+await inst.write("Add a note that the migration finished.", {
+  scope: { objects: [{ type: "Project", xuid: projectXuid }] },
+});
+```
+
+Unlike a read scope there is no `relationsScope`: the relations among the scoped
+objects always accompany the extraction hint.
+
+Things to know before reaching for it:
+
+- Scope applies to **text writes only**. The `WriteMutation[]` overload takes
+  `{ timeoutMs? }`, so passing a scope alongside structured mutations does not
+  compile — those bypass extraction entirely and leave a scope nothing to
+  anchor to.
+- The server currently accepts a scope with **fast extraction only**, and caps
+  the number of scoped objects per write. Both are server-side rules, so they
+  surface as an `XmemoryAPIError`.
+- A scoped write additionally requires **read** permission on the instance,
+  because the scoped objects' current values are shown to the extractor. An API
+  key with write access alone is refused.
 
 ### `inst.extract(text, options?)` → `ExtractResult`
 
