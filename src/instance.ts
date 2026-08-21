@@ -31,17 +31,12 @@ import type {
 import { SetupFormat } from "./types.js";
 
 /**
- * Serialize scope objects to the API's identity wire shape: `{type, key: {key: {...}}}`
- * by user-defined primary key, or `{type, key: {xuid: ...}}` by xuid. Shared by
- * scoped reads and scoped writes so the two cannot drift.
+ * Serialize scope objects to the API's identity wire shape, `{type, key: {key: {...}}}`,
+ * by user-defined primary key. Shared by scoped reads and scoped writes so the two
+ * cannot drift.
  */
 function serializeScopeObjects(objects: readonly ScopeObject[]): Record<string, unknown>[] {
-  return objects.map((o) => {
-    if ((o.key == null) === (o.xuid == null)) {
-      throw new Error("scope object needs exactly one of 'key' or 'xuid'");
-    }
-    return { type: o.type, key: o.xuid != null ? { xuid: o.xuid } : { key: o.key } };
-  });
+  return objects.map((o) => ({ type: o.type, key: { key: o.key } }));
 }
 
 /** Build the shared `/write` + `/write_async` request body for either input mode. */
@@ -291,7 +286,7 @@ export class InstanceHandle {
    * to the text form.
    *
    * Pass `scope` — a `WriteScope` of concrete existing objects, each named by
-   * its primary key or its xuid — to anchor a text write to them. Their current
+   * its user-defined primary key — to anchor a text write to them. Their current
    * values are shown to the extractor so the write updates them instead of
    * creating duplicates, and the write is then confined to the scope: it may
    * only modify or delete the scoped objects and create new objects and

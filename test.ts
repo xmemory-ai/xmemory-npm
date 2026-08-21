@@ -1299,44 +1299,26 @@ async function captureRequest(
   );
 
   await inst.writeAsync("She moved to the London office.", {
-    scope: { objects: [{ type: "Person", xuid: "3f2a" }] },
+    scope: { objects: [{ type: "Person", key: { name: "Bob Lee" } }] },
   });
   check(
-    "scoped writeAsync: xuid identity nests as key.xuid",
+    "scoped writeAsync: primary-key identity nests as key.key",
     JSON.stringify(capturedBody["scope"]) ===
-      JSON.stringify({ objects: [{ type: "Person", key: { xuid: "3f2a" } }] }),
+      JSON.stringify({ objects: [{ type: "Person", key: { key: { name: "Bob Lee" } } }] }),
   );
 
   await inst.write("Bob is an engineer.");
   check("unscoped write: no scope wire key", !("scope" in capturedBody));
 
-  // The same serializer backs scoped reads, so the xuid form works there too.
+  // Reads and writes share one serializer, so the identity shape cannot drift.
   await inst.read("What does she do?", {
-    scope: { objects: [{ type: "Person", xuid: "3f2a" }] },
+    scope: { objects: [{ type: "Person", key: { name: "Alice Johnson" } }] },
   });
   check(
-    "scoped read: xuid identity nests as key.xuid",
+    "scoped read: primary-key identity nests as key.key",
     JSON.stringify((capturedBody["scope"] as Record<string, unknown>)["objects"]) ===
-      JSON.stringify([{ type: "Person", key: { xuid: "3f2a" } }]),
+      JSON.stringify([{ type: "Person", key: { key: { name: "Alice Johnson" } } }]),
   );
-
-  let neitherThrew = false;
-  try {
-    await inst.write("hello", { scope: { objects: [{ type: "Person" }] } });
-  } catch {
-    neitherThrew = true;
-  }
-  check("scope object with no identity throws", neitherThrew);
-
-  let bothThrew = false;
-  try {
-    await inst.write("hello", {
-      scope: { objects: [{ type: "Person", key: { name: "Alice" }, xuid: "3f2a" }] },
-    });
-  } catch {
-    bothThrew = true;
-  }
-  check("scope object with both identities throws", bothThrew);
 
   // The overload types keep `scope` off the mutations form; this pins the
   // runtime guard for a caller who reached the implementation signature anyway.

@@ -274,10 +274,9 @@ records you care about, or for keeping a per-user / per-entity read from leaking
 into unrelated data.
 
 Each object in the scope is identified by its `type` (the PascalCase class name
-or snake_case table name) plus **exactly one** of `key` — its user-defined
-primary key, a mapping of primary-key field name to value — or `xuid`, the
-object's xuid. The `xuid` form is the only way to name an object whose type has
-no user-defined primary key:
+or snake_case table name) plus its user-defined primary `key`, a mapping of
+primary-key field name to value. Only objects of a type that has a user-defined
+primary key can be scoped:
 
 ```typescript
 const result = await inst.read("What do we know about these people?", {
@@ -318,17 +317,9 @@ object fails with a validation error rather than applying partially — that
 confinement is checked against the resulting plan, so it holds regardless of
 what the extractor produced.
 
-The `xuid` form works here too, which is what you need for an object whose type
-has no primary key:
-
-```typescript
-await inst.write("Add a note that the migration finished.", {
-  scope: { objects: [{ type: "Project", xuid: projectXuid }] },
-});
-```
-
-Unlike a read scope there is no `relationsScope`: the relations among the scoped
-objects always accompany the extraction hint.
+A write scope takes the same `ScopeObject`s as a read scope, identified the same
+way. Unlike a read scope there is no `relationsScope`: the relations among the
+scoped objects always accompany the extraction hint.
 
 Things to know before reaching for it:
 
@@ -336,6 +327,9 @@ Things to know before reaching for it:
   `{ timeoutMs? }`, so passing a scope alongside structured mutations does not
   compile — those bypass extraction entirely and leave a scope nothing to
   anchor to.
+- Only objects of a type with a **user-defined primary key** can be scoped. A
+  scope names records by that key, so a type declared `primary_key: []` has
+  nothing to name its records by.
 - The server currently accepts a scope with **fast extraction only**, and caps
   the number of scoped objects per write. Both are server-side rules, so they
   surface as an `XmemoryAPIError`.
