@@ -18,6 +18,7 @@ import type {
   RequestOneFn,
   RequestOptions,
   ReviewSuggestionsResult,
+  ScopeObject,
   SuggestionRequestOptions,
   TaggedReaderResult,
   ToolDescription,
@@ -29,6 +30,20 @@ import type {
 } from "./types.js";
 import { SetupFormat } from "./types.js";
 
+/**
+ * Serialize scope objects to the API's identity wire shape: `{type, key: {key: {...}}}`
+ * by user-defined primary key, or `{type, key: {xuid: ...}}` by xuid. Shared by
+ * scoped reads and scoped writes so the two cannot drift.
+ */
+function serializeScopeObjects(objects: readonly ScopeObject[]): Record<string, unknown>[] {
+  return objects.map((o) => {
+    if ((o.key == null) === (o.xuid == null)) {
+      throw new Error("scope object needs exactly one of 'key' or 'xuid'");
+    }
+    return { type: o.type, key: o.xuid != null ? { xuid: o.xuid } : { key: o.key } };
+  });
+}
+
 /** Build the shared `/write` + `/write_async` request body for either input mode. */
 function buildWriteBody(
   input: string | readonly WriteMutation[],
@@ -37,6 +52,12 @@ function buildWriteBody(
   if (typeof input !== "string") {
     if (input.length === 0) {
       throw new Error("structured write requires at least one mutation");
+    }
+    // Structured mutations bypass extraction, so there is nothing for a scope to
+    // anchor. The overload types already rule this out; the throw catches a caller
+    // who reached the implementation signature anyway.
+    if (options?.scope != null) {
+      throw new Error("'scope' and structured mutations are mutually exclusive");
     }
     // Structured path: no text, no extraction options — mutations go straight
     // to the wire.
@@ -47,6 +68,9 @@ function buildWriteBody(
     extraction_logic: options?.extractionLogic ?? "fast",
   };
   if (options?.diffEngine != null) body.use_diff_engine = options.diffEngine;
+  if (options?.scope != null) {
+    body.scope = { objects: serializeScopeObjects(options.scope.objects) };
+  }
   return body;
 }
 
@@ -238,13 +262,8 @@ export class InstanceHandle {
       mode: options?.readMode ?? "single-answer",
     };
     if (options?.scope != null) {
-      // Serialize to the API's identity wire shape: each object is
-      // `{type, key: {key: {...}}}` (by user-defined primary key), plus `relations_scope`.
       body.scope = {
-        objects: options.scope.objects.map((o) => ({
-          type: o.type,
-          key: { key: o.key },
-        })),
+        objects: serializeScopeObjects(options.scope.objects),
         relations_scope: options.scope.relationsScope ?? "no_relations",
       };
     }
@@ -270,6 +289,16 @@ export class InstanceHandle {
    * objects created earlier in the batch, and a `null` value in a mutation's
    * `values` clears that field). `extractionLogic` / `diffEngine` only apply
    * to the text form.
+   *
+   * Pass `scope` — a `WriteScope` of concrete existing objects, each named by
+   * its primary key or its xuid — to anchor a text write to them. Their current
+   * values are shown to the extractor so the write updates them instead of
+   * creating duplicates, and the write is then confined to the scope: it may
+   * only modify or delete the scoped objects and create new objects and
+   * relations anchored to them. A write that would touch any other existing
+   * object fails. The server accepts a scope with fast extraction only, and a
+   * scoped write additionally requires read permission on the instance, because
+   * the scoped objects' values are shown to the extractor.
    */
   async write(text: string, options?: WriteOptions): Promise<WriteResult>;
   async write(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<WriteResult>;
@@ -285,7 +314,9 @@ export class InstanceHandle {
 
   /**
    * Submit a write job and return immediately with a `write_id` for polling.
-   * Accepts the same text / `WriteMutation[]` dual input as {@link write}.
+   * Accepts the same text / `WriteMutation[]` dual input as {@link write}, and
+   * the same `scope`. A scope violation is reported by {@link writeStatus} as a
+   * failed write.
    */
   async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult>;
   async writeAsync(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<AsyncWriteResult>;

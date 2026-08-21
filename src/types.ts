@@ -13,13 +13,16 @@ export type ExtractionLogic = "fast" | "deep";
 export type ReadMode = "single-answer" | "raw-tables" | "xresponse";
 
 /**
- * One concrete object a scoped read may touch. Identify it by `type` (PascalCase
- * class name or snake_case table name) plus its user-defined primary `key`
- * (a mapping of primary-key field name to value).
+ * One concrete object a scoped read or a scoped write may touch. Identify it by
+ * `type` (PascalCase class name or snake_case table name) plus **exactly one**
+ * of `key` — its user-defined primary key, with one entry per primary-key field
+ * — or `xuid`, the object's xuid. The `xuid` form is the only way to name an
+ * object whose type has no user-defined primary key.
  */
 export interface ScopeObject {
   type: string;
-  key: Record<string, string | number | boolean>;
+  key?: Record<string, string | number | boolean>;
+  xuid?: string;
 }
 
 /** Which relations a scoped read may traverse. */
@@ -33,6 +36,18 @@ export type RelationsScope = "no_relations" | "all_relations";
 export interface ReadScope {
   objects: ScopeObject[];
   relationsScope?: RelationsScope;
+}
+
+/**
+ * A write's scope: the concrete existing `objects` the write is anchored to.
+ * Their current values are shown to the extractor so the write updates them
+ * instead of creating duplicates, and the write is then confined to them — it
+ * may only modify or delete the scoped objects and create new objects and
+ * relations anchored to them. Unlike `ReadScope` there is no relation policy:
+ * the relations among the scoped objects always accompany the hint.
+ */
+export interface WriteScope {
+  objects: ScopeObject[];
 }
 
 export type WriteQueueStatus =
@@ -660,6 +675,12 @@ export interface ReadOptions {
 export interface WriteOptions {
   extractionLogic?: ExtractionLogic;
   diffEngine?: boolean;
+  /**
+   * Anchor a text write to a set of concrete existing objects, confining it to
+   * them. Text writes only — the `WriteMutation[]` overload takes
+   * `RequestOptions`, so the combination the server rejects will not compile.
+   */
+  scope?: WriteScope;
   timeoutMs?: number;
 }
 
