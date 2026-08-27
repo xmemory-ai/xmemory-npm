@@ -8,6 +8,9 @@ TypeScript/JavaScript client library for the [xmemory](https://xmemory.ai) API.
 npm install xmemory
 ```
 
+The package ships both ESM and CommonJS builds. `import` and `require` both
+work, and TypeScript resolves the matching declarations either way.
+
 ## Quick start
 
 ```typescript
