@@ -2,6 +2,25 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.8.0
+
+Adds a CommonJS build alongside the ESM one. The package was ESM-only with no
+`exports` map, so a CommonJS consumer had no `require` condition to resolve:
+under `moduleResolution: node16` a value import failed with TS1479 and a type
+import in a `.d.ts` with TS1541. Only runtime worked, and only because Node
+22.12 and later can `require()` an ES module.
+
+### Added
+
+- A CommonJS build at `dist/cjs` next to the ESM build at `dist/esm`, selected
+  by an `exports` map: `import` resolves to ESM, `require` to CommonJS. Each
+  ships its own declarations.
+
+### Changed
+
+- `main`, `module` and `types` point into the new directories. The import path
+  and the API are unchanged.
+
 ## 3.7.0
 
 Adds scoped writes. A write was previously all-or-nothing about what it could
