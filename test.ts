@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import {
   AgentSurface,
   BindingTier,
@@ -13,6 +15,8 @@ import {
   SchemaType,
   type WriteMutation,
 } from "./src/index.js";
+import { CLIENT_HEADER, buildClientIdentity, withClientHeader } from "./src/client.js";
+import { VERSION } from "./src/version.js";
 
 const errors: string[] = [];
 
@@ -1371,6 +1375,275 @@ async function captureRequest(
   check("base query survives request params", parsed.searchParams.get("tenant") === "acme");
   check("request params are added", parsed.searchParams.getAll("ids").join(",") === "a,b");
   check("no second question mark", withParams.url.split("?").length === 2);
+}
+
+// Test: every outbound request carries the client header, merged with
+// whatever headers the caller already built rather than replacing them
+// ---------------------------------------------------------------------------
+
+// The API reads the client name from the token before the first "/" and the release from the three
+// dot-separated numbers that follow it, each at most three digits. The whole value is matched, not
+// just that prefix: a truncated or garbled tail passes a prefix check while carrying nothing the
+// header claims to carry. This is deliberately stricter than what the API tolerates — it pins what
+// this client emits, so a release whose version the API could not read a number out of (a
+// prerelease suffix, say) fails here rather than going out unattributed.
+const IDENTITY_SHAPE = /^xmemory-node\/\d{1,3}\.\d{1,3}\.\d{1,3} \(node [^\s;()]+; [^\s;()]+\)$/;
+const PRINTABLE_ASCII = /^[\x20-\x7e]+$/;
+
+function checkClientHeader(label: string, identity: string | undefined): void {
+  check(`client header: ${label} — whole value is in the shape the API parses`, IDENTITY_SHAPE.test(identity ?? ""));
+  check(`client header: ${label} — carries the package version`, (identity ?? "").startsWith(`xmemory-node/${VERSION} `));
+  check(`client header: ${label} — printable ASCII only`, PRINTABLE_ASCII.test(identity ?? ""));
+}
+
+// ---------------------------------------------------------------------------
+// Test: host details the header cannot safely carry are replaced, not interpolated
+// ---------------------------------------------------------------------------
+
+{
+  const identity = (host: { version?: unknown; platform?: unknown } | undefined) => buildClientIdentity(VERSION, host);
+  const real = { version: "v24.5.0", platform: "darwin" };
+
+  check("client header: real host details are carried through", identity(real) === `xmemory-node/${VERSION} (node v24.5.0; darwin)`);
+  // Passed a version other than this package's, so a hardcoded literal in the builder shows up.
+  check("client header: the version it is given is the version it reports", buildClientIdentity("9.8.7", real) === "xmemory-node/9.8.7 (node v24.5.0; darwin)");
+  for (const version of ["v24.5.0", "v24.5.0-rc.1", "v25.0.0-nightly202601011234567890"]) {
+    check(`client header: the real version shape "${version}" is carried, not replaced`, identity({ version, platform: "linux" }).includes(`(node ${version}; linux)`));
+  }
+  for (const platform of ["aix", "android", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32"]) {
+    check(`client header: the real platform "${platform}" is carried, not replaced`, identity({ version: "v24.5.0", platform }).endsWith(`; ${platform})`));
+  }
+  check("client header: absent host falls back", identity(undefined) === `xmemory-node/${VERSION} (node unknown; unknown)`);
+  check("client header: partial host falls back", identity({}) === `xmemory-node/${VERSION} (node unknown; unknown)`);
+  for (const [label, bad] of [
+    ["empty string", ""],
+    ["non-string", 24],
+    ["non-ASCII", "dárwin"],
+    ["embedded newline", "darwin\nX: y"],
+    ["embedded space", "dar win"],
+    ["embedded semicolon", "dar;win"],
+    ["embedded closing parenthesis", "dar)win"],
+    ["embedded opening parenthesis", "dar(win"],
+    ["far too long to belong in a header", "d".repeat(300)],
+  ] as [string, unknown][]) {
+    const value = identity({ version: bad, platform: bad });
+    check(`client header: ${label} host detail is replaced`, value === `xmemory-node/${VERSION} (node unknown; unknown)`);
+    check(`client header: ${label} still yields a parsable header`, IDENTITY_SHAPE.test(value));
+  }
+}
+
+{
+  let capturedHeaders: Record<string, string> = {};
+  let capturedSignal: AbortSignal | null | undefined;
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+    capturedSignal = init?.signal;
+    return { status: 200, body: { items: [{ id: "1" }] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  await c.admin.listClusters();
+  checkClientHeader("on a _request()-routed call", capturedHeaders[CLIENT_HEADER]);
+  // Recomputed from this process rather than compared against the module's own constant, so a
+  // client built from the wrong host object — reporting "unknown" on a host that has the details —
+  // shows up here instead of passing the shape checks above.
+  check(
+    "client header: reports this host's details",
+    capturedHeaders[CLIENT_HEADER] === buildClientIdentity(VERSION, process),
+  );
+  check("client header: the request carries an abort signal", capturedSignal instanceof AbortSignal);
+  check("client header: Authorization survives the merge", capturedHeaders["Authorization"] === "Bearer t");
+  check("client header: Accept survives the merge", capturedHeaders["Accept"] === "application/json");
+
+  // A write carries a body and a method other than GET, and takes a different branch through the
+  // request builder, so it is covered separately rather than assumed from the read above.
+  capturedHeaders = {};
+  await c.instance("inst-1").write("hello");
+  checkClientHeader("on a body-bearing write", capturedHeaders[CLIENT_HEADER]);
+  check("client header: Authorization survives on a write", capturedHeaders["Authorization"] === "Bearer t");
+  check("client header: Content-Type survives on a write", capturedHeaders["Content-Type"] === "application/json");
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: that abort signal is the one that enforces the request timeout
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  // Settles only when the signal aborts, so the timeout is what ends the request.
+  globalThis.fetch = ((_url: unknown, init?: { signal?: AbortSignal }) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    })) as typeof globalThis.fetch;
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t", timeoutMs: 5 });
+  // Raced against a bound, so a timeout that never fires reports a failed check rather than hanging.
+  // The bound is cleared on the way out, so the suite does not sit waiting for a timer it no longer
+  // needs once the request has already ended.
+  let bound: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = await Promise.race([
+    c.admin.listClusters().then(
+      () => false,
+      () => true,
+    ),
+    new Promise<boolean>((resolve) => {
+      bound = setTimeout(() => resolve(false), 500);
+    }),
+  ]);
+  clearTimeout(bound);
+  check("the abort signal ends a request that outlives its timeout", timedOut);
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: the header merge keeps what the caller built and adds the client header
+// ---------------------------------------------------------------------------
+
+{
+  const caller = { Authorization: "Bearer t", Accept: "application/json" };
+  const before = JSON.stringify(caller);
+  const merged = withClientHeader(caller);
+  check("merge: Authorization is kept", merged["Authorization"] === "Bearer t");
+  check("merge: Accept is kept", merged["Accept"] === "application/json");
+  check("merge: the client header is added", IDENTITY_SHAPE.test(merged[CLIENT_HEADER] ?? ""));
+  // Compared whole, not one key: a merge that scribbled any other key on the caller would pass
+  // a check that only looked for the client header.
+  check("merge: the caller's own object is left alone", JSON.stringify(caller) === before);
+  check("merge: no headers at all still yields the client header", IDENTITY_SHAPE.test(withClientHeader(undefined)[CLIENT_HEADER] ?? ""));
+  const empty: Record<string, string> = {};
+  withClientHeader(empty);
+  check("merge: an empty caller object is left alone too", Object.keys(empty).length === 0);
+
+  // A User-Agent on the way in is carried through untouched: this client does not claim that field,
+  // so whatever the runtime or the caller put there is what goes out.
+  const withUa = withClientHeader({ "User-Agent": "someone-else/1.0" });
+  check("merge: a caller's User-Agent is carried through unchanged", withUa["User-Agent"] === "someone-else/1.0");
+  check("merge: and the client header is still added alongside it", IDENTITY_SHAPE.test(withUa[CLIENT_HEADER] ?? ""));
+
+  // An incoming spelling of our own header is dropped, whatever its case. Two keys differing only in
+  // case are one field on the wire, and fetch joins them into "first, second" — whose leading token is
+  // what the API reads, so a surviving duplicate would let the other value name the client.
+  for (const spelling of ["X-Xmemory-Client", "x-xmemory-client", "X-XMEMORY-CLIENT", "x-Xmemory-client"]) {
+    const out = withClientHeader({ [spelling]: "someone-else/1.0", Accept: "application/json" });
+    const names = Object.keys(out).filter((n) => n.toLowerCase() === CLIENT_HEADER.toLowerCase());
+    check(`merge: "${spelling}" leaves exactly one client header`, names.length === 1);
+    check(`merge: "${spelling}" from a caller does not win`, IDENTITY_SHAPE.test(out[CLIENT_HEADER] ?? ""));
+    check(`merge: "${spelling}" does not disturb other headers`, out["Accept"] === "application/json");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Test: checkHealth() never calls _headers() but still carries the client header
+// ---------------------------------------------------------------------------
+
+{
+  let capturedHeaders: Record<string, string> = {};
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+    return { status: 200, body: {} };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  await c.checkHealth();
+  checkClientHeader("on checkHealth()", capturedHeaders[CLIENT_HEADER]);
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: create() health-checks before it hands back a client, so the first
+// request an application makes already identifies itself
+// ---------------------------------------------------------------------------
+
+{
+  const seen: { url: string; identity: string | undefined }[] = [];
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url, init) => {
+    seen.push({ url, identity: ((init?.headers ?? {}) as Record<string, string>)[CLIENT_HEADER] });
+    return { status: 200, body: {} };
+  });
+
+  await XmemoryClient.create({ url: "http://localhost:1", apiKey: "t" });
+  check("create(): health-checks before returning", seen.length === 1 && seen[0]!.url.endsWith("/healthz"));
+  checkClientHeader("on the create() health check", seen[0]?.identity);
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: the header name is what the API reads, asserted as a literal
+// ---------------------------------------------------------------------------
+
+{
+  // Compared against the string itself, not against CLIENT_HEADER, which every other check in this
+  // file uses to look the header up. The API names this header in its own source and this package
+  // cannot import it, so the two agree only by both being right; a rename here would move all those
+  // other checks with it and leave the suite green while this SDK's calls were filed as generic
+  // undici traffic — permanently, because an analytics value cannot be reclassified once emitted.
+  check("the client header name is pinned to its literal", CLIENT_HEADER === "X-Xmemory-Client");
+}
+
+// ---------------------------------------------------------------------------
+// Test: the exported VERSION constant stays in sync with package.json and
+// with both version fields the lockfile carries
+// ---------------------------------------------------------------------------
+
+{
+  // Resolved against this file rather than the process cwd, so the checks report a named failure
+  // instead of an ENOENT crash when the suite is started from somewhere other than the package root.
+  const read = (name: string) => JSON.parse(readFileSync(new URL(name, import.meta.url), "utf-8"));
+
+  const pkg = read("package.json") as { version: string };
+  check("VERSION matches package.json", pkg.version === VERSION);
+
+  const lock = read("package-lock.json") as {
+    version?: string;
+    packages?: Record<string, { version?: string } | undefined>;
+  };
+  check("package-lock.json top-level version matches", lock.version === VERSION);
+  check("package-lock.json root package version matches", lock.packages?.[""]?.version === VERSION);
+
+  // The fourth thing this repo requires to move together with a release.
+  const changelog = readFileSync(new URL("./CHANGELOG.md", import.meta.url), "utf-8");
+  // Split on either line ending, so a checkout that uses CRLF does not fail this on punctuation.
+  const heading = changelog.split(/\r?\n/).find((line) => line.startsWith("## "));
+  check("CHANGELOG.md leads with this version", heading === `## ${VERSION}`);
+}
+
+// ---------------------------------------------------------------------------
+// Test: the package exposes its entry point and nothing else
+// ---------------------------------------------------------------------------
+
+{
+  // Without an exports map every compiled module is deep-importable, which silently publishes
+  // internals - the identity builders among them - as API a later release cannot take back.
+  // This asserts the map still names exactly the two paths meant to be reachable, so dropping it,
+  // or widening it with a "./*" entry, fails here rather than at the next publish.
+  const read = (name: string) => JSON.parse(readFileSync(new URL(name, import.meta.url), "utf-8"));
+  const pkg = read("package.json") as { exports?: Record<string, unknown> };
+  const paths = Object.keys(pkg.exports ?? {}).sort();
+
+  check("package.json declares an exports map", pkg.exports !== undefined);
+  check("exports map exposes only the entry point and package.json", paths.join(",") === ".,./package.json");
+
+  // Dual build: "import" must land on ESM and "require" on CommonJS, never crossed - a consumer
+  // that require()s an ESM file gets ERR_REQUIRE_ESM at runtime, which no type-check would catch.
+  const entry = (pkg.exports?.["."] ?? {}) as Record<string, Record<string, string>>;
+  check("entry point serves both module systems", Object.keys(entry).sort().join(",") === "import,require");
+  check("import resolves to the ESM build", entry.import?.default === "./dist/esm/index.js");
+  check("require resolves to the CommonJS build", entry.require?.default === "./dist/cjs/index.js");
+  // Ahead of "default" in each condition, or a consumer on "moduleResolution": "bundler" gets no types.
+  for (const condition of ["import", "require"]) {
+    check(`${condition} declares its types first`, Object.keys(entry[condition] ?? {})[0] === "types");
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,46 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.9.0
+
+Identifies this client to the API, so traffic from it is no longer indistinguishable
+from any other program calling the same endpoints.
+
+### Added
+
+- Every outbound request now sends an `X-Xmemory-Client` header naming the package and
+  its release, followed by the host — on macOS under Node 24.5.0 this release sends
+  `xmemory-node/3.9.0 (node v24.5.0; darwin)`. The parenthetical reports
+  `process.version` and `process.platform`, and says `unknown` for either one a host
+  leaves out, or reports as something this header should not carry. Every request
+  is covered, including the health check `XmemoryClient.create()` runs before it hands
+  back a client — the first request an application makes.
+- Adding the header leaves every other header on the request untouched,
+  `Authorization` and `User-Agent` among them. The one exception is the identity header
+  itself: a pre-existing `X-Xmemory-Client`, in whatever capitalisation, is replaced rather
+  than joined, so exactly one goes out.
+
+### Notes
+
+The identity travels in a dedicated header rather than in `User-Agent`. That field
+belongs to the runtime, and in a browser `fetch` treats it as forbidden and drops it
+silently, so it could never carry this reliably. Nothing else on the wire claims
+`X-Xmemory-Client`.
+
+Two different things can go wrong with a custom header, and they are worth keeping
+apart:
+
+- **A proxy that strips unknown `X-` headers** mis-buckets the call. The request still
+  goes through and still carries the runtime's own `User-Agent`, so it is counted as a
+  generic caller rather than as this SDK.
+- **A browser blocks the call outright.** `X-Xmemory-Client` is not a CORS-safelisted
+  request header, so from a browser it makes the request preflighted: if the responding
+  CORS layer does not name it in `Access-Control-Allow-Headers`, the actual request is
+  never sent. This is a real change for in-browser use — before this release the browser
+  dropped `User-Agent` before any preflight, so the same call worked, just unattributed.
+  If you run this SDK in a browser against your own gateway or reverse proxy, add
+  `X-Xmemory-Client` to its allowed request headers before upgrading.
+
 ## 3.8.3
 
 Request URLs are composed from the configured base rather than concatenated with
