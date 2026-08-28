@@ -527,6 +527,18 @@ Advisory values — `step.kind`, `fragment.merge`, `format` — are widened to a
 added to the server after this release, so an additive change does not become a breaking
 one. A `step.kind` you do not recognise is not something to execute.
 
+## Request identification
+
+Every request this client issues carries an `X-Xmemory-Client` header naming the package and its
+release, followed by the host — for example `xmemory-node/3.9.0 (node v24.5.0; darwin)`. The
+parenthetical reports `process.version` and `process.platform`, says `unknown` for either one a host
+does not supply, and never carries a hostname. The API uses it to tell its own clients apart.
+
+The identity travels in a dedicated header rather than in `User-Agent`, which belongs to the runtime:
+your `User-Agent` is neither read nor written, and every other header on the request is left alone. A
+proxy that strips unknown `X-` headers costs the attribution but not the request — the call still goes
+through, counted as a generic caller.
+
 ## Error handling
 
 All errors throw `XmemoryAPIError`. Health check failures throw `XmemoryHealthCheckError` (a subclass).

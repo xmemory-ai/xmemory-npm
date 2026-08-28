@@ -34,6 +34,17 @@ import {
   XmemoryHealthCheckError,
   buildInstanceSchema,
 } from "./types.js";
+import { VERSION } from "./version.js";
+
+/**
+ * The `init` `_fetch` accepts — deliberately narrower than `RequestInit`, whose `headers` also
+ * admits a `Headers` instance and a `[string, string][]`. Neither survives the `Object.entries()`
+ * walk the header merge below relies on: a `Headers` yields no own entries because they live behind
+ * methods, and a tuple array yields numeric keys holding arrays. Either way every header it
+ * carried, `Authorization` included, would vanish from the request while the header-free health
+ * check kept succeeding. Requiring a plain record makes any other shape a compile error at the call site.
+ */
+type FetchInit = Omit<RequestInit, "headers"> & { headers?: Record<string, string> };
 
 const DEFAULT_BASE_URL = "https://api.xmemory.ai";
 
@@ -57,6 +68,68 @@ function ownArray(source: unknown, key: string): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 const DEFAULT_TIMEOUT_MS = 60_000;
+
+const HOST_FIELD_MAX = 64;
+
+/** One host detail, reduced to something a header value may safely carry. */
+const hostField = (value: unknown): string =>
+  typeof value === "string" &&
+  value.length <= HOST_FIELD_MAX &&
+  /^[\x21-\x7e]+$/.test(value) &&
+  !/[;()]/.test(value)
+    ? value
+    : "unknown";
+
+/**
+ * The identity this client sends in `X-Xmemory-Client`. A host detail is admitted only as a short,
+ * non-empty run of printable ASCII carrying no space, semicolon or parenthesis, and becomes
+ * `unknown` otherwise.
+ * The reasons differ by character. A bundler shim routinely supplies a partial `process`, whose
+ * missing fields would write the word "undefined" into the header. A control character such as NUL
+ * or a newline makes `fetch` reject the request outright, and a character above `\xff` cannot be
+ * converted to a header value at all. The rest — a byte outside ASCII, a tab, a space, a semicolon,
+ * a parenthesis — is carried fine, but would blur the boundaries of the parenthetical this builds.
+ * The length cap is there because nothing else bounds what a host may report into a header this
+ * sends on every request. Not re-exported from `index.ts` — exported here so the tests can cover
+ * those substitutions directly.
+ */
+export function buildClientIdentity(
+  version: string,
+  host: { version?: unknown; platform?: unknown } | undefined,
+): string {
+  return `xmemory-node/${version} (node ${hostField(host?.version)}; ${hostField(host?.platform)})`;
+}
+
+/**
+ * The header this client identifies itself in. A dedicated field rather than `User-Agent`: that one
+ * belongs to whoever built the request — the runtime, or the caller — and in a browser `fetch`
+ * treats it as forbidden and drops it silently. Nothing else on the wire claims this name.
+ */
+export const CLIENT_HEADER = "X-Xmemory-Client";
+
+// `process` is absent in a browser and partial under some bundler shims, so the fields are read
+// defensively and each one falls back to `unknown`.
+const CLIENT_IDENTITY = buildClientIdentity(VERSION, typeof process !== "undefined" ? process : undefined);
+
+/**
+ * The headers a request goes out with: everything the caller built, in a new object so the
+ * caller's own is left untouched, plus this client's identity. Any existing spelling of the identity
+ * header is dropped first — header names are case-insensitive on the wire, so leaving one behind
+ * would put two values under one name, and `fetch` joins those into a single comma-separated value
+ * whose first token is the one the API reads. `User-Agent` and everything else pass through
+ * untouched. No public entry point lets a caller supply request headers today — `_fetch` only ever
+ * sees what `_headers()` built — so the drop is defensive against a future call site that does, not
+ * a live collision. Not re-exported from `index.ts`; exported here so the tests can cover the merge
+ * directly.
+ */
+export function withClientHeader(existing: Record<string, string> | undefined): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(existing ?? {})) {
+    if (name.toLowerCase() !== CLIENT_HEADER.toLowerCase()) headers[name] = value;
+  }
+  headers[CLIENT_HEADER] = CLIENT_IDENTITY;
+  return headers;
+}
 
 const ORANGE = "\x1b[38;5;208m";
 const RESET = "\x1b[0m";
@@ -265,11 +338,15 @@ export class XmemoryClient {
   // Private: HTTP layer
   // -----------------------------------------------------------------------
 
-  private async _fetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  private async _fetch(url: string, init: FetchInit, timeoutMs: number): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(url, { ...init, signal: controller.signal });
+      return await fetch(url, {
+        ...init,
+        headers: withClientHeader(init.headers),
+        signal: controller.signal,
+      });
     } finally {
       clearTimeout(timer);
     }
@@ -316,7 +393,7 @@ export class XmemoryClient {
 
     const timeoutMs = options?.timeoutMs ?? this._timeoutMs;
     const hasBody = !!(options?.body && method !== "GET");
-    const init: RequestInit = { method, headers: this._headers(hasBody) };
+    const init: FetchInit = { method, headers: this._headers(hasBody) };
     if (hasBody) {
       init.body = JSON.stringify(options!.body);
     }
