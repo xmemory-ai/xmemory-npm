@@ -2,6 +2,18 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.8.2
+
+The response envelope is read as own properties too. 3.8.1 fixed the fields inside
+a result; the wrapper around them — `items`, `ids`, `errors` — was still read
+through the prototype chain, so a polluted prototype could supply an `items` array
+and an empty `200 {}` came back as a genuine result.
+
+### Fixed
+
+- `items`, `ids` and `errors` are read as own properties and required to be arrays.
+  A response that carries none of them is an error, as it was before.
+
 ## 3.8.1
 
 Response normalization no longer trusts inherited properties. A decoded response is
