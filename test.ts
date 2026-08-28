@@ -970,18 +970,20 @@ const INSTANCE_ITEM = { id: "i", cluster_id: "c", name: "n", description: null, 
 async function captureRequest(
   fn: (c: XmemoryClient) => Promise<unknown>,
   item: Record<string, unknown> = INSTANCE_ITEM,
-): Promise<{ method: string; body: Record<string, unknown> }> {
+  url = "http://localhost:1",
+): Promise<{ method: string; body: Record<string, unknown>; url: string }> {
   const origFetch = globalThis.fetch;
-  let captured = { method: "", body: {} as Record<string, unknown> };
-  globalThis.fetch = mockFetch((_url, init) => {
+  let captured = { method: "", body: {} as Record<string, unknown>, url: "" };
+  globalThis.fetch = mockFetch((requestUrl, init) => {
     captured = {
       method: init?.method ?? "",
       body: init?.body ? JSON.parse(init.body as string) : {},
+      url: String(requestUrl),
     };
     return { status: 200, body: { items: [item] } };
   });
   try {
-    await fn(new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }));
+    await fn(new XmemoryClient({ url, apiKey: "t" }));
   } finally {
     globalThis.fetch = origFetch;
   }
@@ -1334,6 +1336,41 @@ async function captureRequest(
   check("scope with structured mutations throws", structuredThrew);
 
   globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Request URLs are composed from the configured base
+
+{
+  // Concatenation put the API path inside the query of a base that carried one,
+  // and a plain `new URL(path, base)` drops a base path prefix. Both shapes are
+  // real: a gateway mounts the API under a prefix, a tenant router uses a query.
+  const cases: [string, string][] = [
+    ["https://api.example.com", "https://api.example.com/instances/inst-1/read"],
+    ["https://api.example.com/", "https://api.example.com/instances/inst-1/read"],
+    ["https://gw.example.com/xmemory", "https://gw.example.com/xmemory/instances/inst-1/read"],
+    ["https://api.example.com?tenant=acme", "https://api.example.com/instances/inst-1/read?tenant=acme"],
+  ];
+  for (const [base, expected] of cases) {
+    const req = await captureRequest(
+      (c) => c.instance("inst-1").read("q"),
+      { reader_result: "x", reader_results: [] },
+      base,
+    );
+    check(`request url for base ${base}`, req.url === expected);
+  }
+
+  // Request parameters join whatever the base already carries, rather than
+  // appending a second `?`.
+  const withParams = await captureRequest(
+    (c) => c.admin.listInstances({ ids: ["a", "b"] }),
+    INSTANCE_ITEM,
+    "https://api.example.com?tenant=acme",
+  );
+  const parsed = new URL(withParams.url);
+  check("base query survives request params", parsed.searchParams.get("tenant") === "acme");
+  check("request params are added", parsed.searchParams.getAll("ids").join(",") === "a,b");
+  check("no second question mark", withParams.url.split("?").length === 2);
 }
 
 // ---------------------------------------------------------------------------

@@ -284,26 +284,35 @@ export class XmemoryClient {
     return h;
   }
 
+  /**
+   * The request URL for `path`, honouring whatever the configured base carries.
+   *
+   * Composed through `URL` rather than concatenated. Concatenation put the API path
+   * inside the query of a base that had one (`https://host?tenant=x` requested `/`),
+   * and appended a second `?` for request parameters. A plain `new URL(path, base)`
+   * is not the fix either: it drops a base path prefix, so a gateway base like
+   * `https://gw.example/xmemory` would lose `/xmemory`.
+   */
+  private _requestUrl(path: string, params?: Record<string, string | string[]>): string {
+    const url = new URL(this._baseUrl);
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+    for (const [key, val] of Object.entries(params ?? {})) {
+      if (Array.isArray(val)) {
+        for (const v of val) url.searchParams.append(key, v);
+      } else {
+        url.searchParams.append(key, val);
+      }
+    }
+    return url.toString();
+  }
+
   /** Core request — returns the raw API wrapper `{ids, items, errors}`. */
   private async _request(
     method: string,
     path: string,
     options?: InternalRequestOptions,
   ): Promise<RawApiResponse> {
-    let url = `${this._baseUrl}${path}`;
-
-    if (options?.params) {
-      const sp = new URLSearchParams();
-      for (const [key, val] of Object.entries(options.params)) {
-        if (Array.isArray(val)) {
-          for (const v of val) sp.append(key, v);
-        } else {
-          sp.append(key, val);
-        }
-      }
-      const qs = sp.toString();
-      if (qs) url += `?${qs}`;
-    }
+    const url = this._requestUrl(path, options?.params);
 
     const timeoutMs = options?.timeoutMs ?? this._timeoutMs;
     const hasBody = !!(options?.body && method !== "GET");
