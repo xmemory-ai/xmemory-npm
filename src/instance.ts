@@ -235,8 +235,22 @@ function buildJsonSchemaProps(params: readonly ToolParameterDescription[]): {
  * exactly the deployments that have no link — the case the comparison exists for.
  * Same treatment `read` already gives `reader_results`.
  */
+/**
+ * An *own* property of a decoded response, or `undefined`.
+ *
+ * A response is JSON, so a field the server omitted is answered by
+ * `Object.prototype` — and normalizing with `result.field ?? default` then writes
+ * that inherited value back as an own property, where nothing downstream can tell
+ * it apart from something the server actually sent. Prototype pollution anywhere in
+ * the process could fabricate sub-answers or a trace id this way.
+ */
+function own(result: object, key: string): unknown {
+  return Object.hasOwn(result, key) ? (result as Record<string, unknown>)[key] : undefined;
+}
+
 function withConsoleUrl<T extends { console_url?: string | null }>(result: T): T & { console_url: string | null } {
-  return { ...result, console_url: result.console_url ?? null };
+  const url = own(result, "console_url");
+  return { ...result, console_url: typeof url === "string" ? url : null };
 }
 
 export class InstanceHandle {
@@ -273,7 +287,17 @@ export class InstanceHandle {
       body,
       timeoutMs: options?.timeoutMs,
     });
-    return withConsoleUrl({ ...result, reader_results: result.reader_results ?? [] });
+    // Every documented field set explicitly, so each one is an *own* property of
+    // what callers get back. Spreading alone leaves an omitted field to be answered
+    // by `Object.prototype` when the caller reads it.
+    const readerResults = own(result, "reader_results");
+    const traceId = own(result, "trace_id");
+    return withConsoleUrl({
+      ...result,
+      reader_result: own(result, "reader_result") ?? null,
+      reader_results: Array.isArray(readerResults) ? readerResults : [],
+      trace_id: typeof traceId === "string" ? traceId : null,
+    });
   }
 
   /**
@@ -325,7 +349,8 @@ export class InstanceHandle {
     });
     // `trace_id` is normalized here as well because this result declares it for the
     // first time, and the wire omits it exactly as it omits the console link.
-    return withConsoleUrl({ ...result, trace_id: result.trace_id ?? null });
+    const traceId = own(result, "trace_id");
+    return withConsoleUrl({ ...result, trace_id: typeof traceId === "string" ? traceId : null });
   }
 
   async writeStatus(writeId: string, options?: RequestOptions): Promise<WriteStatusResult> {

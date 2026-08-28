@@ -2,6 +2,20 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.8.1
+
+Response normalization no longer trusts inherited properties. A decoded response is
+a plain object, so a field the server omitted is answered by `Object.prototype`, and
+normalizing with `result.field ?? default` wrote that inherited value back as an own
+property — where nothing downstream could tell it apart from something the server
+sent. With a polluted prototype, a read could return fabricated sub-answers.
+
+### Fixed
+
+- `reader_results`, `trace_id` and `console_url` are read as own properties and
+  type-checked before they are normalized. A server that omits them still gets the
+  documented defaults (`[]`, `null`, `null`).
+
 ## 3.8.0
 
 Adds a CommonJS build alongside the ESM one. The package was ESM-only with no
