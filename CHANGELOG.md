@@ -2,6 +2,18 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.8.3
+
+Request URLs are composed from the configured base rather than concatenated with
+it. A base carrying a query string sent the API path into that query — a read
+against `https://host?tenant=acme` requested `/` — and request parameters appended a
+second `?`. A base path prefix, as a gateway deployment uses, keeps working.
+
+### Fixed
+
+- `url` may carry a path prefix and a query string. Both survive: the API path is
+  appended to the prefix, and request parameters join the existing query.
+
 ## 3.8.2
 
 The response envelope is read as own properties too. 3.8.1 fixed the fields inside
