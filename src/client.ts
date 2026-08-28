@@ -36,6 +36,26 @@ import {
 } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://api.xmemory.ai";
+
+/**
+ * An *own* property of a decoded response, or `undefined`.
+ *
+ * A decoded body is a plain object, so a field the server omitted is answered by
+ * `Object.prototype`. Reading the envelope that way let a polluted prototype supply
+ * an `items` array — and a 200 with an empty body then came back as a genuine
+ * result. Every read of a server-controlled envelope goes through here.
+ */
+function own(source: unknown, key: string): unknown {
+  return typeof source === "object" && source !== null && Object.hasOwn(source, key)
+    ? (source as Record<string, unknown>)[key]
+    : undefined;
+}
+
+/** An own array field, or an empty one. Never the prototype's. */
+function ownArray(source: unknown, key: string): unknown[] {
+  const value = own(source, key);
+  return Array.isArray(value) ? value : [];
+}
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 const ORANGE = "\x1b[38;5;208m";
@@ -65,7 +85,7 @@ function extractStructuredError(payload: unknown): {
       details: (p.details ?? null) as Record<string, unknown> | null,
     };
   }
-  const errors = p.errors;
+  const errors = own(p, "errors");
   if (Array.isArray(errors) && errors.length > 0 && typeof errors[0] === "object" && errors[0] !== null) {
     const first = errors[0] as Record<string, unknown>;
     return {
@@ -320,8 +340,9 @@ export class XmemoryClient {
 
     const response = payload as RawApiResponse;
 
-    if (response.errors?.length) {
-      const first: ApiError = response.errors[0];
+    const responseErrors = ownArray(response, "errors");
+    if (responseErrors.length > 0) {
+      const first = responseErrors[0] as ApiError;
       throw new XmemoryAPIError(`API error: ${first.message} (${first.code})`, res.status, first.code);
     }
 
@@ -330,7 +351,7 @@ export class XmemoryClient {
 
   private async _requestOne<T>(method: string, path: string, options?: InternalRequestOptions): Promise<T> {
     const response = await this._request(method, path, options);
-    const items = response.items ?? [];
+    const items = ownArray(response, "items");
     if (items.length === 0) {
       throw new XmemoryAPIError(`Expected one item from ${method} ${path}, got none`);
     }
@@ -342,12 +363,12 @@ export class XmemoryClient {
 
   private async _requestList<T>(method: string, path: string, options?: InternalRequestOptions): Promise<T[]> {
     const response = await this._request(method, path, options);
-    return (response.items ?? []) as T[];
+    return ownArray(response, "items") as T[];
   }
 
   private async _requestIds(method: string, path: string, options?: InternalRequestOptions): Promise<string[]> {
     const response = await this._request(method, path, options);
-    return response.ids ?? [];
+    return ownArray(response, "ids") as string[];
   }
 
   // -----------------------------------------------------------------------
