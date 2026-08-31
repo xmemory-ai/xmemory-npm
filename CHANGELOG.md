@@ -34,13 +34,14 @@ apart:
 - **A proxy that strips unknown `X-` headers** mis-buckets the call. The request still
   goes through and still carries the runtime's own `User-Agent`, so it is counted as a
   generic caller rather than as this SDK.
-- **A browser blocks the call outright.** `X-Xmemory-Client` is not a CORS-safelisted
-  request header, so from a browser it makes the request preflighted: if the responding
-  CORS layer does not name it in `Access-Control-Allow-Headers`, the actual request is
-  never sent. This is a real change for in-browser use — before this release the browser
-  dropped `User-Agent` before any preflight, so the same call worked, just unattributed.
-  If you run this SDK in a browser against your own gateway or reverse proxy, add
-  `X-Xmemory-Client` to its allowed request headers before upgrading.
+- **A browser preflights the call.** Browsers are not a supported target for this package
+  and this release does not change that: it authenticates with a bearer API key, which a
+  browser cannot hold safely, and the hosted API serves no CORS to browser origins, so a
+  browser could not reach it before this release either. Nothing supported regresses here,
+  which is why this is a minor release. If you run this SDK behind a gateway of your own
+  that does serve CORS, note that `X-Xmemory-Client` is not a CORS-safelisted request
+  header: it makes the request preflighted, and the gateway must name it in
+  `Access-Control-Allow-Headers` or the actual request is never sent.
 
 ## 3.8.3
 
