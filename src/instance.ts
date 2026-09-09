@@ -292,6 +292,9 @@ export class InstanceHandle {
     // by `Object.prototype` when the caller reads it.
     const readerResults = own(result, "reader_results");
     const traceId = own(result, "trace_id");
+    // `reader_result` is required on the wire and `null` is one of its answers (a
+    // refusal, in the tabular modes), so the coalescing only stands in for a field
+    // the server omitted; a `null` the server sent arrives as the same `null`.
     return withConsoleUrl({
       ...result,
       reader_result: own(result, "reader_result") ?? null,

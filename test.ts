@@ -352,6 +352,92 @@ function mockFetch(
 }
 
 // ---------------------------------------------------------------------------
+// Test: the four read answers reach the caller as the server sent them
+//
+// In the tabular modes the value of `reader_result` is the answer: the empty
+// result means the query matched nothing, `null` means the schema cannot
+// represent the concept, and a failed sub-query is told apart from one that
+// matched nothing by `error` alone. None of these may be rewritten on the way
+// through — `null` in particular is not "absent".
+// ---------------------------------------------------------------------------
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          trace_id: "r-1",
+          reader_result: null,
+          reader_results: [
+            { sub_query: "Which invoices are overdue?", reader_result: null, error: null },
+            { sub_query: "Who approved them?", reader_result: { columns: [], rows: [] }, error: "SQL failed" },
+          ],
+        },
+      ],
+    },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const res = await c
+    .instance("inst-1")
+    .read("Which invoices are overdue, and who approved them?", { readMode: "raw-tables" });
+  check("a refused read keeps its null answer", res.reader_result === null);
+  check("a refused sub-query keeps its null answer", res.reader_results[0].reader_result === null);
+  check("a refused sub-query carries no error", res.reader_results[0].error === null);
+  check("a failed sub-query carries its error", res.reader_results[1].error === "SQL failed");
+  check(
+    "a failed sub-query carries the empty result",
+    JSON.stringify(res.reader_results[1].reader_result) === JSON.stringify({ columns: [], rows: [] }),
+  );
+
+  globalThis.fetch = origFetch;
+}
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ trace_id: "r-1", reader_result: { columns: [], rows: [] } }] },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const res = await c.instance("inst-1").read("Which invoices are overdue?", { readMode: "raw-tables" });
+  check(
+    "a read that matched nothing keeps the empty result",
+    JSON.stringify(res.reader_result) === JSON.stringify({ columns: [], rows: [] }),
+  );
+
+  globalThis.fetch = origFetch;
+}
+
+// A read that answered nothing is an error the caller can branch on, not an
+// empty result and not a server error.
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 422,
+    body: {
+      errors: [{ code: "INVALID_INPUT", message: "This query could not be answered: its SQL failed to execute." }],
+    },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").read("Which invoices are overdue?", { readMode: "raw-tables" });
+    check("a read that answered nothing throws", false);
+  } catch (e) {
+    const err = e as XmemoryAPIError;
+    check("a read that answered nothing throws XmemoryAPIError", e instanceof XmemoryAPIError);
+    check("a read that answered nothing is a 422", err.status === 422);
+    check("a read that answered nothing carries INVALID_INPUT", err.code === "INVALID_INPUT");
+  }
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
 // Test: every data operation surfaces its console link
 //
 // The API has always sent `console_url`; this client dropped it, so pointing at what

@@ -188,13 +188,21 @@ export interface InstanceSchemaInfo {
  * One sub-query and its own answer, in the requested read mode. Appears in
  * {@link ReadResult.reader_results} when the server decomposed a composite query
  * into independent sub-queries.
+ *
+ * `reader_result` gives one of the four answers described on
+ * {@link ReadResult.reader_result}, with one more case: a sub-query whose SQL
+ * failed carries the empty result *and* `error`, while the other sub-queries
+ * are answered regardless. Its bytes then equal those of a sub-query that
+ * matched nothing, so read `error` before `reader_result`.
  */
 export interface TaggedReaderResult {
   readonly sub_query: string;
   readonly reader_result: unknown;
   /**
-   * A user-safe message set when this sub-query could not be answered while the
-   * others still were (partial tolerance); `null` otherwise.
+   * A user-safe message set when this sub-query's SQL could not be executed;
+   * `null` otherwise. In `"raw-tables"` / `"xresponse"` mode a read where every
+   * sub-query failed does not return at all: it throws {@link XmemoryAPIError}
+   * with `status` 422 and `code` `"INVALID_INPUT"`.
    */
   readonly error: string | null;
 }
@@ -209,6 +217,28 @@ export interface ReadResult {
   readonly trace_id: string | null;
   /** Deep link to this read's trace in the console; `null` if no console is configured. */
   readonly console_url: string | null;
+  /**
+   * The answer, shaped by `readMode`. In `"single-answer"` mode it is always the
+   * prose answer, never `null`. In `"raw-tables"` / `"xresponse"` mode its value
+   * says which of four answers the read gave:
+   *
+   * - rows — answered;
+   * - exactly `{ columns: [], rows: [] }` (`"raw-tables"`) or
+   *   `{ objects: [], relations: [] }` (`"xresponse"`) — the query executed and
+   *   matched nothing: every table and column it used exists, so the data is
+   *   absent;
+   * - `null` — the schema provably cannot represent the concept. An answer in
+   *   its own right, not a variant of the empty one: this memory cannot hold
+   *   it, so a better-matching instance is worth trying;
+   * - no result at all — every sub-query's SQL failed, so nothing was
+   *   answered. The read throws {@link XmemoryAPIError} with `status` 422 and
+   *   `code` `"INVALID_INPUT"` rather than reporting an empty result.
+   *
+   * For a composite query this is the combined answer, folded from the parts:
+   * rows if any sub-query answered; else the empty result if any executed and
+   * matched nothing; else `null`. `reader_results` carries each part's own
+   * answer.
+   */
   readonly reader_result: unknown;
   /**
    * Per-sub-query answers when the server decomposed the query into independent

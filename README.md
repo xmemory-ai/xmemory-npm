@@ -251,6 +251,29 @@ console.log(result.reader_result);
 
 Options: `{ readMode?, scope?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
 
+#### What comes back
+
+In `"single-answer"` mode `reader_result` is always the prose answer. In
+`"raw-tables"` and `"xresponse"` mode its value says which of four answers the
+read gave:
+
+| `reader_result` | Meaning | What to do |
+| --- | --- | --- |
+| rows | Answered. | Use them. |
+| exactly `{ columns: [], rows: [] }` / `{ objects: [], relations: [] }` | The query executed and matched nothing — every table and column it used exists, so the data is absent. | Trust the empty result. |
+| `null` | The schema provably cannot represent the concept. An answer, not a variant of the empty one. | Try a better-matching instance; this memory cannot hold it. |
+| *(throws)* | Every sub-query's SQL failed, so nothing was answered. | Catch `XmemoryAPIError` with `status` 422 and `code` `"INVALID_INPUT"`. It is the same answer for the same input, so do not retry it. |
+
+```typescript
+const result = await inst.read("Which invoices are overdue?", { readMode: "raw-tables" });
+if (result.reader_result === null) {
+  // Not a concept this memory holds — try another instance.
+} else {
+  const { rows } = result.reader_result as { columns: string[]; rows: unknown[][] };
+  // rows.length === 0 means the data is absent, not that the read failed.
+}
+```
+
 #### Composite queries
 
 When a query bundles several independent questions, the server may decompose it
@@ -268,6 +291,15 @@ for (const part of result.reader_results) {
   console.log(part.sub_query, "→", part.error ?? part.reader_result);
 }
 ```
+
+Each part's `reader_result` uses the same four answers as above, with one more
+case: a sub-query whose SQL failed carries the empty result *and* a user-safe
+`error`, while the others are answered regardless. Its bytes then equal those
+of a sub-query that matched nothing, so read `error` before `reader_result`, as
+the loop above does. The combined `reader_result` folds the parts: rows if any
+sub-query answered; else the empty result if any executed and matched nothing;
+else `null`. In the tabular modes a read where *every* sub-query failed throws
+the 422 above instead.
 
 #### Scoped reads
 
@@ -574,6 +606,7 @@ different things:
 | ---- | ----------------- | ---------------------------------------------------- | ---------------------------------- |
 | 402  | `QUOTA_EXCEEDED`  | Tenant exhausted its plan/usage allowance (a daily or monthly token quota). | **No.** Wait for the window to reset. |
 | 429  | `RATE_LIMITED`    | Genuine velocity / rate limit.                       | **Yes**, with backoff.             |
+| 422  | `INVALID_INPUT`   | A read that answered nothing: in `"raw-tables"` / `"xresponse"` mode every sub-query's SQL failed, or the model provider declined the input. See [What comes back](#what-comes-back). | **No.** Same input, same answer. |
 
 For `QUOTA_EXCEEDED`, `details` carries `kind`
 (`"daily_quota_exceeded"` | `"monthly_quota_exceeded"`) and

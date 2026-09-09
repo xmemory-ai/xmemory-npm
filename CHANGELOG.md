@@ -2,6 +2,34 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.9.1
+
+Documents what a read answers with, now that the API says it the same way for a
+single question and a composite one. A read gives one of four answers, and in
+the `"raw-tables"` and `"xresponse"` modes the value of `reader_result` says
+which: rows; the empty result, exactly `{ columns: [], rows: [] }` or
+`{ objects: [], relations: [] }`, when the query executed and matched nothing;
+`null` when the schema provably cannot represent the concept; and no result at
+all when every sub-query's SQL failed — that read throws `XmemoryAPIError` with
+`status` 422 and `code` `"INVALID_INPUT"` instead of arriving as an empty table
+or a server error. The same values appear per sub-query in `reader_results`,
+where a failed sub-query carries the empty result with `error` set, so read
+`error` first.
+
+### Changed
+
+- `ReadResult.reader_result` and `TaggedReaderResult` say which of the four
+  answers each value is, and the README's *What comes back* section says what
+  to do with each. `422 INVALID_INPUT` joins the error table.
+
+### Notes
+
+No behavior change in the client: every one of these values already passed
+through untouched, and this release pins that with tests. Against a server
+without the API change, a read that matched nothing came back as `null` at the
+top level and as a column-bearing empty table under `reader_results`; the
+shapes above are what a server carrying it sends.
+
 ## 3.9.0
 
 Identifies this client to the API, so traffic from it is no longer indistinguishable
