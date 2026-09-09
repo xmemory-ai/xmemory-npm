@@ -27,6 +27,7 @@ import type {
   WriteOptions,
   WriteResult,
   WriteStatusResult,
+  RelatedTypes,
 } from "./types.js";
 import { SetupFormat } from "./types.js";
 
@@ -276,13 +277,16 @@ export class InstanceHandle {
         relations_scope: options.scope.relationsScope ?? "no_relations",
       };
     }
+    if (options?.includeRelatedTypes != null) body.include_related_types = options.includeRelatedTypes;
     if (options?.traceId != null) body.trace_id = options.traceId;
     // The wire shape omits `reader_results` on a server without question
-    // decomposition, so type it as optional here and normalize to an always-array
-    // for the public `ReadResult` below.
-    const result = await this._requestOne<Omit<ReadResult, "reader_results" | "console_url"> & {
+    // decomposition, and `related_types` unless the read asked for it, so type
+    // them as optional here and normalize (always-array, `null`) for the public
+    // `ReadResult` below.
+    const result = await this._requestOne<Omit<ReadResult, "reader_results" | "console_url" | "related_types"> & {
       reader_results?: readonly TaggedReaderResult[];
       console_url?: string | null;
+      related_types?: RelatedTypes | null;
     }>("POST", `/instances/${this.id}/read`, {
       body,
       timeoutMs: options?.timeoutMs,
@@ -292,6 +296,7 @@ export class InstanceHandle {
     // by `Object.prototype` when the caller reads it.
     const readerResults = own(result, "reader_results");
     const traceId = own(result, "trace_id");
+    const relatedTypes = own(result, "related_types");
     // `reader_result` is required on the wire and `null` is one of its answers (a
     // refusal, in the tabular modes), so the coalescing only stands in for a field
     // the server omitted; a `null` the server sent arrives as the same `null`.
@@ -299,6 +304,8 @@ export class InstanceHandle {
       ...result,
       reader_result: own(result, "reader_result") ?? null,
       reader_results: Array.isArray(readerResults) ? readerResults : [],
+      related_types:
+        relatedTypes != null && typeof relatedTypes === "object" ? (relatedTypes as RelatedTypes) : null,
       trace_id: typeof traceId === "string" ? traceId : null,
     });
   }

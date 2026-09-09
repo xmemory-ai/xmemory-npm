@@ -249,7 +249,7 @@ const result = await inst.read("Who is on the team?");
 console.log(result.reader_result);
 ```
 
-Options: `{ readMode?, scope?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
+Options: `{ readMode?, scope?, includeRelatedTypes?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
 
 #### What comes back
 
@@ -328,6 +328,39 @@ const result = await inst.read("What do we know about these people?", {
 `relationsScope` controls relation traversal: `"no_relations"` (the default)
 restricts the read to the listed objects only, while `"all_relations"` also
 exposes the relations among the in-scope objects.
+
+#### Related types
+
+A read can also say what else the memory could answer about. Pass
+`includeRelatedTypes: "types"` and `related_types` on the result names the
+object types the read touched, each with the fields it did not return and the
+object types a declared relation links it to (the relation, both roles, and its
+cardinality seen from the touched type), plus a catalog that describes every
+named type (description, primary key, field names) and relation once. It is
+derived from the instance schema and the statements the read executed — no
+extra rows, no model call — so an agent can ask a deliberate follow-up instead
+of guessing what the store holds.
+
+```typescript
+const result = await inst.read("Which courses require an English test?", {
+  includeRelatedTypes: "types",
+});
+for (const touched of result.related_types?.touched ?? []) {
+  console.log(touched.object_type, "did not return", touched.fields_not_returned);
+  for (const link of touched.related) {
+    const neighbour = result.related_types!.types[link.object_type];
+    console.log("  linked to", link.object_type, "via", link.relation, neighbour.fields);
+  }
+}
+```
+
+`related_types` is `null` unless the read asked for it. A requested read that
+executed nothing arrives with `touched: []`. The server caps the payload;
+`truncated` says when it did, and `omitted_touched` and each entry's
+`omitted_related` count what was dropped. Asking for it needs the
+`instance.get_own` permission on the API key, the same one the schema
+endpoints need, on top of `data.read`: a key without it gets a 403 whose
+message names the permission, and the plain read is unaffected.
 
 #### Scoped writes
 
@@ -607,6 +640,7 @@ different things:
 | 402  | `QUOTA_EXCEEDED`  | Tenant exhausted its plan/usage allowance (a daily or monthly token quota). | **No.** Wait for the window to reset. |
 | 429  | `RATE_LIMITED`    | Genuine velocity / rate limit.                       | **Yes**, with backoff.             |
 | 422  | `INVALID_INPUT`   | A read that answered nothing: in `"raw-tables"` / `"xresponse"` mode every sub-query's SQL failed, or the model provider declined the input. See [What comes back](#what-comes-back). | **No.** Same input, same answer. |
+| 403  | `FORBIDDEN`       | The API key lacks a permission the call needs — for a read with `includeRelatedTypes: "types"`, `instance.get_own`; the message names it. See [Related types](#related-types). | **No.** Repeat without the option, or use a key that holds it. |
 
 For `QUOTA_EXCEEDED`, `details` carries `kind`
 (`"daily_quota_exceeded"` | `"monthly_quota_exceeded"`) and

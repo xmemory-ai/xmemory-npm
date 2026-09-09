@@ -1678,6 +1678,114 @@ function checkClientHeader(label: string, identity: string | undefined): void {
 }
 
 // ---------------------------------------------------------------------------
+// Test: related types — asked for on the wire, surfaced as sent, null otherwise
+// ---------------------------------------------------------------------------
+
+{
+  const asked = await captureRequest((c) =>
+    c.instance("inst-1").read("Which courses require an English test?", { includeRelatedTypes: "types" }),
+  );
+  check("includeRelatedTypes is sent as include_related_types", asked.body["include_related_types"] === "types");
+
+  const plain = await captureRequest((c) => c.instance("inst-1").read("Which courses require an English test?"));
+  check("an unset includeRelatedTypes sends no wire key", !("include_related_types" in plain.body));
+}
+
+{
+  const relatedTypes = {
+    touched: [
+      {
+        object_type: "course",
+        fields_not_returned: ["credits", "faculty"],
+        related: [
+          {
+            object_type: "university",
+            relation: "offering",
+            touched_role: "course",
+            related_role: "university",
+            cardinality: "many_to_many",
+          },
+        ],
+        omitted_related: 0,
+      },
+    ],
+    types: {
+      course: { description: "An academic programme", primary_key: ["code"], fields: ["code", "credits", "faculty", "name"] },
+      university: { description: null, primary_key: ["code"], fields: ["city", "code", "name"] },
+    },
+    relations: { offering: { description: "A university offers a course" } },
+    omitted_touched: 0,
+    truncated: false,
+  };
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ trace_id: "r-1", reader_result: "CS101", related_types: relatedTypes }] },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const res = await c.instance("inst-1").read("Which courses require an English test?", {
+    includeRelatedTypes: "types",
+  });
+  check("related_types is an own property of the result", Object.hasOwn(res, "related_types"));
+  check("related_types arrives as the server sent it", JSON.stringify(res.related_types) === JSON.stringify(relatedTypes));
+  check(
+    "a touched type names what it withheld and what links to it",
+    res.related_types?.touched[0].fields_not_returned[1] === "faculty" &&
+      res.related_types?.touched[0].related[0].cardinality === "many_to_many" &&
+      res.related_types?.types["university"].fields.length === 3,
+  );
+
+  globalThis.fetch = origFetch;
+}
+
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ trace_id: "r-1", reader_result: "CS101" }] },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const res = await c.instance("inst-1").read("Which courses require an English test?");
+  check("related_types is null when the read did not ask", Object.hasOwn(res, "related_types") && res.related_types === null);
+
+  globalThis.fetch = origFetch;
+}
+
+// A key without the schema permission is refused, and the refusal names the permission.
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 403,
+    body: {
+      errors: [
+        {
+          code: "FORBIDDEN",
+          message:
+            "Related types need the instance.get_own permission, which this API key does not have. " +
+            'Repeat the read without include_related_types (or with "none") to get the answer alone.',
+        },
+      ],
+    },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").read("Which courses require an English test?", { includeRelatedTypes: "types" });
+    check("a read refused for related types throws", false);
+  } catch (e) {
+    const err = e as XmemoryAPIError;
+    check("a read refused for related types throws XmemoryAPIError", e instanceof XmemoryAPIError);
+    check("a read refused for related types is a 403", err.status === 403);
+    check("a read refused for related types carries FORBIDDEN", err.code === "FORBIDDEN");
+    check("a read refused for related types names the permission", err.message.includes("instance.get_own"));
+  }
+
+  globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
 // Test: the exported VERSION constant stays in sync with package.json and
 // with both version fields the lockfile carries
 // ---------------------------------------------------------------------------
