@@ -2,6 +2,34 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.10.0
+
+A read can now say what else the memory could answer about. Pass
+`includeRelatedTypes: "types"` and the result carries `related_types`: the
+object types the read touched, each with the fields it did not return and the
+object types a declared relation links it to, plus a catalog that describes
+every named type and relation once. It is derived from the instance schema and
+the statements the read executed, so it costs no extra rows and no model call,
+and an agent can phrase a deliberate follow-up read instead of guessing.
+
+### Added
+
+- `ReadOptions.includeRelatedTypes` (`"none"` | `"types"`), sent as
+  `include_related_types` only when set, and `ReadResult.related_types`, `null`
+  unless the read asked for it. The `RelatedTypes` shape and its parts —
+  `RelatedTypesTouched`, `RelatedTypesLink`, `RelatedTypesObjectType`,
+  `RelatedTypesRelation`, `RelationCardinality` — are exported.
+- `403 FORBIDDEN` joins the error table: the option needs the `instance.get_own`
+  permission on the API key, the same one the schema endpoints need, and the
+  server names it in the message.
+
+### Notes
+
+The server caps the payload and says so: `truncated`, `omitted_touched` and each
+touched type's `omitted_related` count what was dropped. A server that predates
+the option ignores nothing — it rejects the unknown body field — so only send
+`includeRelatedTypes` to a server that carries it.
+
 ## 3.9.1
 
 Documents what a read answers with, now that the API says it the same way for a

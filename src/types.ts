@@ -13,6 +13,25 @@ export type ExtractionLogic = "fast" | "deep";
 export type ReadMode = "single-answer" | "raw-tables" | "xresponse";
 
 /**
+ * What a read says about the schema around its answer. `"types"` adds
+ * {@link ReadResult.related_types} to the result; `"none"` (the server default)
+ * leaves it out. Asking for it needs the `instance.get_own` permission on the
+ * API key, the same one the schema endpoints need, on top of `data.read`: a key
+ * without it gets a 403 whose message names the permission, and the plain read
+ * is unaffected.
+ */
+export type RelatedTypesMode = "none" | "types";
+
+/**
+ * Cardinality of a relation seen from the touched type's role, derived from the
+ * relation's unique keys: `"one_to_many"` means one touched record links to many
+ * neighbours and each neighbour to at most one touched record; `"many_to_one"`
+ * is the reverse; `"unconstrained"` means the schema declares no uniqueness rule
+ * for the relation.
+ */
+export type RelationCardinality = "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | "unconstrained";
+
+/**
  * One concrete object a scoped read or a scoped write may touch. Identify it by
  * `type` (PascalCase class name or snake_case table name) plus its user-defined
  * primary `key`, with one entry per primary-key field. Only objects of a type
@@ -213,6 +232,73 @@ export interface TaggedReaderResult {
 // each method normalizes the absence so callers never have to tell `undefined` from
 // `null`.
 
+/** One relation edge from a touched type to a neighbouring type; {@link RelatedTypes.types} describes both ends. */
+export interface RelatedTypesLink {
+  /** The neighbouring object type, described once under `types`. */
+  readonly object_type: string;
+  /** The relation that links the two, described once under `relations`. */
+  readonly relation: string;
+  /** The relation role the touched type plays in this edge. */
+  readonly touched_role: string;
+  /** The relation role the neighbouring type plays in this edge. */
+  readonly related_role: string;
+  readonly cardinality: RelationCardinality;
+}
+
+/** One object type the read touched, with what it withheld and what it is linked to. */
+export interface RelatedTypesTouched {
+  /** Object type name as declared in the schema, described under `types`. */
+  readonly object_type: string;
+  /**
+   * Fields of this type the read did not project. Ask for one by name to see it;
+   * an expression the reader could not attribute to a field counts here rather
+   * than as returned.
+   */
+  readonly fields_not_returned: readonly string[];
+  /** Relation edges to neighbouring types, sorted by relation then type. A self-relation lists one edge per role. */
+  readonly related: readonly RelatedTypesLink[];
+  /** Edges dropped from `related` to stay within the server's payload budget. */
+  readonly omitted_related: number;
+}
+
+/** Catalog entry for an object type named anywhere in {@link RelatedTypes.touched}. */
+export interface RelatedTypesObjectType {
+  readonly description: string | null;
+  /** Declared primary-key fields, in declared order. */
+  readonly primary_key: readonly string[];
+  /** Every field of the object type, by name. */
+  readonly fields: readonly string[];
+}
+
+/** Catalog entry for a relation named by any edge. */
+export interface RelatedTypesRelation {
+  readonly description: string | null;
+}
+
+/**
+ * What else the memory could answer about, for a read that asked with
+ * `includeRelatedTypes: "types"`: the object types the read touched, each with
+ * the fields it did not return and its relation edges, plus a catalog that
+ * describes every named type and relation exactly once. It is derived from the
+ * instance schema and the statements the read executed — no extra rows are
+ * read and no model is called — so an agent can phrase a deliberate follow-up
+ * read instead of guessing. The server caps the payload; whatever it dropped is
+ * counted on the entry it was dropped from, and `truncated` says that something
+ * was.
+ */
+export interface RelatedTypes {
+  /** Object types the read touched, sorted by name. Empty when the read executed nothing. */
+  readonly touched: readonly RelatedTypesTouched[];
+  /** Every object type named in `touched`, touched or neighbouring, once. */
+  readonly types: Readonly<Record<string, RelatedTypesObjectType>>;
+  /** Every relation named by an edge, once. */
+  readonly relations: Readonly<Record<string, RelatedTypesRelation>>;
+  /** Touched types dropped to stay within the budget. */
+  readonly omitted_touched: number;
+  /** `true` when any type or edge was dropped for the budget. */
+  readonly truncated: boolean;
+}
+
 export interface ReadResult {
   readonly trace_id: string | null;
   /** Deep link to this read's trace in the console; `null` if no console is configured. */
@@ -249,6 +335,14 @@ export interface ReadResult {
    * so the array is empty regardless of how many questions the query held.
    */
   readonly reader_results: readonly TaggedReaderResult[];
+  /**
+   * The schema around the answer, when the read asked for it with
+   * `includeRelatedTypes: "types"`; `null` otherwise. The wire omits the field
+   * unless it was requested, and a server that predates the option never sends
+   * it; the client normalizes both to `null`, so `null` means "not asked for" and
+   * a requested read that executed nothing arrives with `touched: []` instead.
+   */
+  readonly related_types: RelatedTypes | null;
 }
 
 export interface WriteResult {
@@ -696,6 +790,14 @@ export interface ReadOptions {
   readMode?: ReadMode;
   /** Restrict the read to a set of concrete objects (plus optional relation traversal). */
   scope?: ReadScope;
+  /**
+   * `"types"` asks for {@link ReadResult.related_types}: the object types the read
+   * touched, the fields it did not return, and the object types a declared
+   * relation links them to. Left unset, nothing is sent and the server default
+   * (`"none"`) applies. Needs `instance.get_own` on the API key; see
+   * {@link RelatedTypesMode}.
+   */
+  includeRelatedTypes?: RelatedTypesMode;
   traceId?: string;
   timeoutMs?: number;
 }
