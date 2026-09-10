@@ -1709,7 +1709,7 @@ function checkClientHeader(label: string, identity: string | undefined): void {
         omitted_related: 0,
       },
     ],
-    types: {
+    objects: {
       course: { description: "An academic programme", primary_key: ["code"], fields: ["code", "credits", "faculty", "name"] },
       university: { description: null, primary_key: ["code"], fields: ["city", "code", "name"] },
     },
@@ -1733,7 +1733,7 @@ function checkClientHeader(label: string, identity: string | undefined): void {
     "a touched type names what it withheld and what links to it",
     res.related_types?.touched[0].fields_not_returned[1] === "faculty" &&
       res.related_types?.touched[0].related[0].cardinality === "many_to_many" &&
-      res.related_types?.types["university"].fields.length === 3,
+      res.related_types?.objects["university"].fields.length === 3,
   );
 
   globalThis.fetch = origFetch;
