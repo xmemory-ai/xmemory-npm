@@ -348,7 +348,7 @@ const result = await inst.read("Which courses require an English test?", {
 for (const touched of result.related_types?.touched ?? []) {
   console.log(touched.object_type, "did not return", touched.fields_not_returned);
   for (const link of touched.related) {
-    const neighbour = result.related_types!.types[link.object_type];
+    const neighbour = result.related_types!.objects[link.object_type];
     console.log("  linked to", link.object_type, "via", link.relation, neighbour.fields);
   }
 }

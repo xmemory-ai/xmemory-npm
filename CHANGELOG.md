@@ -2,6 +2,13 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.11.0
+
+The `related_types` catalog of object types is now `objects` (was `types`), so
+the two catalogs read as a pair, `objects` and `relations`. `RelatedTypes.objects`
+replaces `RelatedTypes.types`; nothing else changes. Requires a server that
+serves the renamed key.
+
 ## 3.10.0
 
 A read can now say what else the memory could answer about. Pass

@@ -232,9 +232,9 @@ export interface TaggedReaderResult {
 // each method normalizes the absence so callers never have to tell `undefined` from
 // `null`.
 
-/** One relation edge from a touched type to a neighbouring type; {@link RelatedTypes.types} describes both ends. */
+/** One relation edge from a touched type to a neighbouring type; {@link RelatedTypes.objects} describes both ends. */
 export interface RelatedTypesLink {
-  /** The neighbouring object type, described once under `types`. */
+  /** The neighbouring object type, described once under `objects`. */
   readonly object_type: string;
   /** The relation that links the two, described once under `relations`. */
   readonly relation: string;
@@ -247,7 +247,7 @@ export interface RelatedTypesLink {
 
 /** One object type the read touched, with what it withheld and what it is linked to. */
 export interface RelatedTypesTouched {
-  /** Object type name as declared in the schema, described under `types`. */
+  /** Object type name as declared in the schema, described under `objects`. */
   readonly object_type: string;
   /**
    * Fields of this type the read did not project. Ask for one by name to see it;
@@ -290,7 +290,7 @@ export interface RelatedTypes {
   /** Object types the read touched, sorted by name. Empty when the read executed nothing. */
   readonly touched: readonly RelatedTypesTouched[];
   /** Every object type named in `touched`, touched or neighbouring, once. */
-  readonly types: Readonly<Record<string, RelatedTypesObjectType>>;
+  readonly objects: Readonly<Record<string, RelatedTypesObjectType>>;
   /** Every relation named by an edge, once. */
   readonly relations: Readonly<Record<string, RelatedTypesRelation>>;
   /** Touched types dropped to stay within the budget. */
