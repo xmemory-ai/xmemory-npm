@@ -1689,10 +1689,20 @@ function checkClientHeader(label: string, identity: string | undefined): void {
 
   const plain = await captureRequest((c) => c.instance("inst-1").read("Which courses require an English test?"));
   check("an unset includeRelatedTypes sends no wire key", !("include_related_types" in plain.body));
+  check("an unset relatedTypesDepth sends no wire key", !("related_types_depth" in asked.body));
+
+  const deep = await captureRequest((c) =>
+    c.instance("inst-1").read("Which courses require an English test?", {
+      includeRelatedTypes: "types",
+      relatedTypesDepth: 2,
+    }),
+  );
+  check("relatedTypesDepth is sent as related_types_depth", deep.body["related_types_depth"] === 2);
 }
 
 {
   const relatedTypes = {
+    depth: 2,
     touched: [
       {
         object_type: "course",
@@ -1710,11 +1720,35 @@ function checkClientHeader(label: string, identity: string | undefined): void {
       },
     ],
     objects: {
-      course: { description: "An academic programme", primary_key: ["code"], fields: ["code", "credits", "faculty", "name"] },
-      university: { description: null, primary_key: ["code"], fields: ["city", "code", "name"] },
+      course: {
+        distance: 0,
+        description: "An academic programme",
+        primary_key: ["code"],
+        fields: ["code", "credits", "faculty", "name"],
+        related: [],
+        omitted_related: 0,
+      },
+      university: {
+        distance: 1,
+        description: null,
+        primary_key: ["code"],
+        fields: ["city", "code", "name"],
+        related: [
+          {
+            object_type: "event",
+            relation: "university_event",
+            touched_role: "university",
+            related_role: "event",
+            cardinality: "unconstrained",
+          },
+        ],
+        omitted_related: 0,
+      },
+      event: { distance: 2, description: null, primary_key: ["name", "date"], fields: ["date", "name"], related: [], omitted_related: 0 },
     },
-    relations: { offering: { description: "A university offers a course" } },
+    relations: { offering: { description: "A university offers a course" }, university_event: { description: null } },
     omitted_touched: 0,
+    omitted_objects: 0,
     truncated: false,
   };
   const origFetch = globalThis.fetch;
@@ -1734,6 +1768,14 @@ function checkClientHeader(label: string, identity: string | undefined): void {
     res.related_types?.touched[0].fields_not_returned[1] === "faculty" &&
       res.related_types?.touched[0].related[0].cardinality === "many_to_many" &&
       res.related_types?.objects["university"].fields.length === 3,
+  );
+  check(
+    "a catalog entry carries its distance and, below the last level, its own edges",
+    res.related_types?.depth === 2 &&
+      res.related_types?.objects["course"].distance === 0 &&
+      res.related_types?.objects["university"].related[0].object_type === "event" &&
+      res.related_types?.objects["event"].distance === 2 &&
+      res.related_types?.objects["event"].related.length === 0,
   );
 
   globalThis.fetch = origFetch;

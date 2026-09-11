@@ -278,6 +278,7 @@ export class InstanceHandle {
       };
     }
     if (options?.includeRelatedTypes != null) body.include_related_types = options.includeRelatedTypes;
+    if (options?.relatedTypesDepth != null) body.related_types_depth = options.relatedTypesDepth;
     if (options?.traceId != null) body.trace_id = options.traceId;
     // The wire shape omits `reader_results` on a server without question
     // decomposition, and `related_types` unless the read asked for it, so type
