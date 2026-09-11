@@ -2,6 +2,23 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.12.0
+
+A read can follow the relations further than the touched types' own edges. Pass
+`relatedTypesDepth: 2` (or 3) alongside `includeRelatedTypes: "types"` and every
+entry under `related_types.objects` carries its `distance` from the touched
+types and, between the touched types and the last level, its own `related`
+edges; the payload echoes the levels served as `depth`. Left unset, nothing is
+sent and the server serves one level as before. Requires a server that accepts
+the field.
+
+### Added
+
+- `relatedTypesDepth` on `ReadOptions`, sent as `related_types_depth` only when
+  set.
+- `RelatedTypesObjectType.distance`, `.related` and `.omitted_related`;
+  `RelatedTypes.depth` and `.omitted_objects`.
+
 ## 3.11.0
 
 The `related_types` catalog of object types is now `objects` (was `types`), so
