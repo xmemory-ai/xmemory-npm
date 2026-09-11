@@ -270,11 +270,14 @@ export interface RelatedTypesTouched {
 /** Catalog entry for an object type named in {@link RelatedTypes.touched} or reached through `relatedTypesDepth`. */
 export interface RelatedTypesObjectType {
   /**
-   * Relation hops from the touched types: 0 for a touched type, 1 for a type a
-   * touched type's edge names, and so on up to {@link RelatedTypes.depth}; the
-   * shortest route counts.
+   * Listed edges from the nearest touched type: 0 for a touched type, 1 for a
+   * type a touched type's listed edge names, and so on up to
+   * {@link RelatedTypes.depth}. A route through an edge the server's budget cut
+   * is not followed, so this can exceed the schema's own hop count; the cutting
+   * entry's `omitted_related` says when. Absent on a one-level read: the server
+   * then serves the payload it always did, without the depth keys.
    */
-  readonly distance: number;
+  readonly distance?: number;
   readonly description: string | null;
   /** Declared primary-key fields, in declared order. */
   readonly primary_key: readonly string[];
@@ -283,11 +286,17 @@ export interface RelatedTypesObjectType {
   /**
    * This type's own relation edges, for an entry whose `distance` is at least 1
    * and below `depth`. Empty for a touched type (its edges are on its `touched`
-   * entry) and at the last level served.
+   * entry), at the last level, and once the server's shared edge budget is spent
+   * (then `omitted_related` counts every edge the type has). Absent on a
+   * one-level read.
    */
-  readonly related: readonly RelatedTypesLink[];
-  /** Edges dropped from `related` to stay within the server's payload budget. */
-  readonly omitted_related: number;
+  readonly related?: readonly RelatedTypesLink[];
+  /**
+   * Edges of this type the server did not list: cut by its per-type cap, by the
+   * edge budget shared with the touched entries, or dropped with a level for its
+   * byte budget. Absent on a one-level read.
+   */
+  readonly omitted_related?: number;
 }
 
 /** Catalog entry for a relation named by any edge. */
@@ -303,28 +312,36 @@ export interface RelatedTypesRelation {
  * instance schema and the statements the read executed — no extra rows are
  * read and no model is called — so an agent can phrase a deliberate follow-up
  * read instead of guessing. With a `relatedTypesDepth` above 1 the catalog
- * follows the relations further: each entry carries its `distance` from the
+ * follows the listed edges further: each entry carries its `distance` from the
  * touched types and, below the last level, its own edges. The server caps the
- * payload; whatever it dropped is counted on the entry it was dropped from, a
- * level dropped whole lowers `depth`, and `truncated` says that something was.
+ * payload; whatever it dropped is counted — an edge on the entry it was dropped
+ * from, a type the catalog could not list on `omitted_objects` — and `truncated`
+ * says that something was. A one-level read is served in the shape that
+ * predates the depth, so `depth`, `omitted_objects` and the catalog entries'
+ * depth fields are then absent.
  */
 export interface RelatedTypes {
   /**
-   * Relation levels served: the requested `relatedTypesDepth` (1 when unset), or
-   * fewer when the byte budget dropped the deepest level, in which case
-   * `truncated` is set.
+   * Relation levels asked for (`relatedTypesDepth`). Never lowered by the server:
+   * what its budgets kept the walk from listing is counted on `omitted_objects`
+   * and on each entry's `omitted_related`. Absent on a one-level read.
    */
-  readonly depth: number;
+  readonly depth?: number;
   /** Object types the read touched, sorted by name. Empty when the read executed nothing. */
   readonly touched: readonly RelatedTypesTouched[];
-  /** Every object type named in `touched` or reached within `depth` relation levels, once, each with its `distance`. */
+  /** Every object type a listed edge names — touched, or reached through the listed edges within `depth` levels — once. */
   readonly objects: Readonly<Record<string, RelatedTypesObjectType>>;
   /** Every relation named by an edge, once. */
   readonly relations: Readonly<Record<string, RelatedTypesRelation>>;
   /** Touched types dropped to stay within the budget. */
   readonly omitted_touched: number;
-  /** Object types listed at a level the byte budget dropped; `depth` stops before it. */
-  readonly omitted_objects: number;
+  /**
+   * Object types within `depth` relation levels of the touched types in the
+   * schema that the catalog does not list: the route to them ran through an edge
+   * the server's budget cut, or their level was dropped for its byte budget.
+   * Absent on a one-level read.
+   */
+  readonly omitted_objects?: number;
   /** `true` when any type, edge or level was dropped for the budget. */
   readonly truncated: boolean;
 }
