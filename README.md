@@ -249,7 +249,7 @@ const result = await inst.read("Who is on the team?");
 console.log(result.reader_result);
 ```
 
-Options: `{ readMode?, scope?, includeRelatedTypes?, relatedTypesDepth?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
+Options: `{ readMode?, scope?, includeRelatedTypes?, relatedTypesDepth?, skipSuggestionCapture?, traceId?, timeoutMs? }` — `readMode` defaults to `"single-answer"`.
 
 #### What comes back
 
@@ -388,6 +388,19 @@ types needs the
 `instance.get_own` permission on the API key, the same one the schema
 endpoints need, on top of `data.read`: a key without it gets a 403 whose
 message names the permission, and the plain read is unaffected.
+
+#### Keeping a read out of schema suggestions
+
+Every read feeds the [suggestion engine](#suggestion-engine-flow-review--decide--apply):
+after answering, the server asks a model whether the schema could fully answer
+the question, and a gap becomes a proposed schema change. For programmatic reads
+— high-volume polling, read-your-write checks — whose question does not reflect
+what a person wants from the memory, pass `skipSuggestionCapture: true`. The
+answer is the same; the read proposes nothing and costs no judge call.
+
+```typescript
+const result = await inst.read("Does invoice INV-42 exist?", { skipSuggestionCapture: true });
+```
 
 #### Scoped writes
 

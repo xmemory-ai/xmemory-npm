@@ -853,6 +853,14 @@ export interface ReadOptions {
    * serves one level; a value out of range is a 422.
    */
   relatedTypesDepth?: number;
+  /**
+   * `true` keeps this read out of the suggestion engine: the server skips the
+   * post-read completeness judge, so the read proposes no schema change and costs
+   * no judge model call. Meant for programmatic reads — high-volume polling,
+   * read-your-write checks — whose question does not reflect what a person
+   * wants from the memory. Left unset, nothing is sent and the read is judged.
+   */
+  skipSuggestionCapture?: boolean;
   traceId?: string;
   timeoutMs?: number;
 }

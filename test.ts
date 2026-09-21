@@ -1700,6 +1700,25 @@ function checkClientHeader(label: string, identity: string | undefined): void {
   check("relatedTypesDepth is sent as related_types_depth", deep.body["related_types_depth"] === 2);
 }
 
+// ---------------------------------------------------------------------------
+// Test: skipSuggestionCapture — sent only when true
+// ---------------------------------------------------------------------------
+
+{
+  const skipped = await captureRequest((c) =>
+    c.instance("inst-1").read("Which courses require an English test?", { skipSuggestionCapture: true }),
+  );
+  check("skipSuggestionCapture is sent as skip_suggestion_capture", skipped.body["skip_suggestion_capture"] === true);
+
+  const plain = await captureRequest((c) => c.instance("inst-1").read("Which courses require an English test?"));
+  check("an unset skipSuggestionCapture sends no wire key", !("skip_suggestion_capture" in plain.body));
+
+  const judged = await captureRequest((c) =>
+    c.instance("inst-1").read("Which courses require an English test?", { skipSuggestionCapture: false }),
+  );
+  check("skipSuggestionCapture: false sends no wire key", !("skip_suggestion_capture" in judged.body));
+}
+
 {
   const relatedTypes = {
     depth: 2,
