@@ -2,6 +2,19 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.13.0
+
+A read can stay out of the suggestion engine. Pass `skipSuggestionCapture: true`
+and the server skips the post-read completeness judge: the read proposes no
+schema change and costs no judge model call, and the answer is unchanged. Use it
+for programmatic reads whose question does not reflect what a person wants from
+the memory. Left unset, nothing is sent and the read is judged as before.
+
+### Added
+
+- `skipSuggestionCapture` on `ReadOptions`, sent as `skip_suggestion_capture`
+  only when `true`.
+
 ## 3.12.0
 
 A read can follow the relations further than the touched types' own edges. Pass
