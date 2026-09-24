@@ -2,6 +2,55 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.14.0
+
+A scoped write can now drop what falls outside the scope instead of failing over
+it. Until now a scope was all-or-nothing: one sentence about a record you did
+not name cost you the whole write, which made a scope hard to point at free text
+a person actually wrote. Pass `mode: "drop"` and the write applies the plan it
+would have run unscoped, minus every out-of-scope change and every change that
+depended on one, and tells you what it left out.
+
+That report is the second half of the feature, so this release types it. A
+dropped write succeeds, so nothing throws and nothing in the result said what
+was skipped; `changes.skipped_out_of_scope` now does, on the sync result and on
+a completed `writeStatus` alike — the async path had no typed view of it at all.
+
+### Added
+
+- `mode` on `WriteScope` (`WriteScopeMode`, `"reject"` | `"drop"`). It is sent
+  as `mode` only when it changes something: unset and `"reject"` both put no
+  `mode` on the wire, so the request stays byte-identical for a server that
+  predates the field.
+- `WriteChanges` and `SkippedOutOfScope`, exported. Each skipped entry names the
+  `operation`, the `object_type_name` (the relation type for `link` / `unlink`),
+  an `identity` rendered `field='value'`, the `fields` it would have written,
+  and the `count` of records it stands for. `operation` is widened with
+  `(string & {})` like the other server-supplied values here, so one added after
+  this release stays typed.
+- `changes` on `WriteStatusResult`, the same `WriteChanges` the sync write
+  returns. Optional: a queued, in-progress, failed or unknown write carries none.
+
+### Changed
+
+- `WriteResult.changes` is `WriteChanges` rather than `unknown`. Only
+  `skipped_out_of_scope` is modelled — `created` / `updated` / `deleted` stay
+  `unknown`, as they have always been, so nothing that reads them changes.
+
+### Notes
+
+`identity` is empty unless the scope itself named that record. The server
+identifies a skipped record only when the caller already knew of it, so an empty
+string means "some other record of this type", not "a record with no key". The
+list is omitted when nothing was skipped, so treat `undefined` and `[]` alike.
+
+Two `"drop"`-only rules come from the server. It creates a record whose primary
+key the scope names even if that record is not stored yet — which is what makes
+"create or update exactly this record" expressible, where `"reject"` requires
+every scoped record to exist already — and it never creates a record of a type
+that declares no user-defined primary key, because a scope cannot name one. It
+is computed by the diff engine, so `diffEngine: false` alongside it is a 400.
+
 ## 3.13.0
 
 A read can stay out of the suggestion engine. Pass `skipSuggestionCapture: true`

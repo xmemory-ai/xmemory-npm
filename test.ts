@@ -13,6 +13,7 @@ import {
   InstanceHandle,
   xmemoryInstance,
   SchemaType,
+  type SkippedOutOfScope,
   type WriteMutation,
 } from "./src/index.js";
 import { CLIENT_HEADER, buildClientIdentity, withClientHeader } from "./src/client.js";
@@ -1360,7 +1361,8 @@ async function captureRequest(
 }
 
 // ---------------------------------------------------------------------------
-// Test: scoped writes — the WriteScope wire shape, both identity forms
+// Test: scoped writes — the WriteScope wire shape, both identity forms, and
+// the out-of-scope mode
 // ---------------------------------------------------------------------------
 
 {
@@ -1389,6 +1391,29 @@ async function captureRequest(
     "scoped write: no relations_scope key",
     !("relations_scope" in (capturedBody["scope"] as Record<string, unknown>)),
   );
+  // The whole point of omitting the default: this body has to stay byte-identical
+  // for a server that predates `mode`, which rejects an unknown field outright.
+  check("scoped write: no mode key when unset", !("mode" in (capturedBody["scope"] as Record<string, unknown>)));
+
+  await inst.write("Alice is a surgeon; her colleague Bob moved to Rotterdam.", {
+    scope: { objects: [{ type: "Person", key: { name: "Alice Johnson" } }], mode: "drop" },
+  });
+  check(
+    "scoped write: drop mode rides the scope, alongside the objects",
+    JSON.stringify(capturedBody["scope"]) ===
+      JSON.stringify({ objects: [{ type: "Person", key: { key: { name: "Alice Johnson" } } }], mode: "drop" }),
+  );
+
+  // Spelling the default out for the next reader must not cost compatibility with a
+  // server that predates the field, so `"reject"` sends exactly what unset sends.
+  await inst.write("After her promotion she is a surgeon.", {
+    scope: { objects: [{ type: "Person", key: { name: "Alice Johnson" } }], mode: "reject" },
+  });
+  check(
+    "scoped write: reject mode sends no mode key",
+    JSON.stringify(capturedBody["scope"]) ===
+      JSON.stringify({ objects: [{ type: "Person", key: { key: { name: "Alice Johnson" } } }] }),
+  );
 
   await inst.writeAsync("She moved to the London office.", {
     scope: { objects: [{ type: "Person", key: { name: "Bob Lee" } }] },
@@ -1397,6 +1422,16 @@ async function captureRequest(
     "scoped writeAsync: primary-key identity nests as key.key",
     JSON.stringify(capturedBody["scope"]) ===
       JSON.stringify({ objects: [{ type: "Person", key: { key: { name: "Bob Lee" } } }] }),
+  );
+
+  // Both entry points build the body through one helper, so the mode cannot reach
+  // one path and miss the other.
+  await inst.writeAsync("She moved to the London office, and so did Dana.", {
+    scope: { objects: [{ type: "Person", key: { name: "Bob Lee" } }], mode: "drop" },
+  });
+  check(
+    "scoped writeAsync: drop mode rides the scope too",
+    (capturedBody["scope"] as Record<string, unknown>)["mode"] === "drop",
   );
 
   await inst.write("Bob is an engineer.");
@@ -1426,6 +1461,126 @@ async function captureRequest(
   check("scope with structured mutations throws", structuredThrew);
 
   globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: what drop mode reports — changes.skipped_out_of_scope, on both paths
+// ---------------------------------------------------------------------------
+
+{
+  const skipped = [
+    {
+      operation: "update",
+      object_type_name: "Person",
+      // Empty: the scope never named Bob Lee, so the server hands back no key the
+      // caller did not supply. The entry still has to arrive.
+      identity: "",
+      fields: ["city"],
+      count: 1,
+    },
+    {
+      operation: "link",
+      object_type_name: "employment",
+      identity: "full_name='Alice Smith'",
+      fields: ["role"],
+      count: 2,
+    },
+  ];
+  const changes = {
+    created: [],
+    updated: [{ object_type: "Person" }],
+    deleted: [],
+    skipped_out_of_scope: skipped,
+  };
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url) => {
+    if (url.endsWith("/write_status")) {
+      return {
+        status: 200,
+        body: {
+          items: [
+            {
+              write_id: "w1",
+              write_status: "completed",
+              error_detail: null,
+              completed_at: "2026-09-23T10:00:00Z",
+              changes,
+            },
+          ],
+        },
+      };
+    }
+    return { status: 200, body: { items: [{ write_id: "w1", trace_id: "t1", changes }] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const inst = c.instance("inst-1");
+
+  const res = await inst.write("Alice Smith is a surgeon; her colleague Bob Lee moved to Rotterdam.", {
+    scope: { objects: [{ type: "Person", key: { full_name: "Alice Smith" } }], mode: "drop" },
+  });
+  const entries = res.changes.skipped_out_of_scope ?? [];
+  check("drop: the skipped list arrives as the server sent it", entries.length === 2);
+  check(
+    "drop: an entry names the operation, type, fields and how many records it stands for",
+    entries[0].operation === "update" &&
+      entries[0].object_type_name === "Person" &&
+      entries[0].fields[0] === "city" &&
+      entries[0].count === 1,
+  );
+  check("drop: a record the scope did not name has an empty identity", entries[0].identity === "");
+  check("drop: a record the scope named is identified by primary key", entries[1].identity === "full_name='Alice Smith'");
+  // A relation change is reported under its relation type, not an object type.
+  check(
+    "drop: link and unlink name the relation type",
+    entries[1].operation === "link" && entries[1].object_type_name === "employment",
+  );
+  // The three groups stay unmodelled; what this pins is that typing the fourth
+  // field did not cost the caller the other three.
+  check("drop: created / updated / deleted still ride the same object", Object.hasOwn(res.changes, "updated"));
+
+  // Drop mode earns most of its keep on the async path, where the caller has no
+  // other view of what the write did with the text it was given.
+  const status = await inst.writeStatus("w1");
+  check(
+    "drop: a completed status carries the same report",
+    status.changes?.skipped_out_of_scope?.[0].fields[0] === "city",
+  );
+
+  globalThis.fetch = origFetch;
+}
+
+{
+  // Nothing skipped — which is every write that did not ask for "drop" — and the
+  // server omits the key entirely. The client invents neither an empty list nor
+  // a thrown error out of that.
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ write_id: "w1", trace_id: "t1", changes: { created: [], updated: [], deleted: [] } }] },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const res = await c.instance("inst-1").write("Bob is an engineer.");
+  check("no skipped list when the server omits it", res.changes.skipped_out_of_scope === undefined);
+  check("and the usual `?? []` walk finds nothing", (res.changes.skipped_out_of_scope ?? []).length === 0);
+
+  globalThis.fetch = origFetch;
+}
+
+{
+  // The widened `operation`, pinned the way `step.kind` is: an operation a later
+  // server names has to stay typed, or an additive server change becomes a
+  // breaking one here.
+  const later: SkippedOutOfScope = {
+    operation: "restore",
+    object_type_name: "Person",
+    identity: "",
+    fields: [],
+    count: 1,
+  };
+  check("an operation this release has not heard of is still typed", later.operation === "restore");
 }
 
 // ---------------------------------------------------------------------------
