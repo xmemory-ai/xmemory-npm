@@ -195,7 +195,7 @@ Every data operation — `read`, `write`, `writeAsync`, `writeStatus`, `extract`
 record, and `null` when the server has no console configured.
 
 Options: `{ extractionLogic?, diffEngine?, scope?, timeoutMs? }` — `extractionLogic`
-defaults to `"fast"`; see [Scoped writes](#scoped-writes) for `scope`.
+defaults to `"fast"`; see [Scoped writes](#scoped-writes) for `scope` and its `mode`.
 
 Or pass a `WriteMutation[]` for **structured writes** — deterministic, LLM-free
 create/update/delete mutations applied in array order (later mutations may
@@ -225,7 +225,9 @@ Options for the mutations form: `{ timeoutMs? }` (extraction options don't apply
 
 Start an asynchronous write (same text / `WriteMutation[]` dual input and the
 same options as `inst.write`, `scope` included). Returns a `write_id` for
-tracking; a scope violation is reported by `inst.writeStatus` as a failed write.
+tracking; under the default `"reject"` mode a scope violation is reported by
+`inst.writeStatus` as a failed write, while under `"drop"` the write completes
+and `inst.writeStatus` carries what it skipped.
 
 ```typescript
 const { write_id } = await inst.writeAsync("Carol manages the London office.");
@@ -238,7 +240,15 @@ Poll the status of an async write.
 ```typescript
 const status = await inst.writeStatus(write_id);
 console.log(status.write_status); // "queued" | "processing" | "completed" | "failed" | "not_found"
+if (status.write_status === "completed") {
+  console.log(status.changes); // the same report inst.write returns inline
+}
 ```
+
+A finished write carries `changes`, the async path's only view of what the write
+did — and where a [scoped write](#scoped-writes) in `"drop"` mode reports what it
+left out. A status for a write that has not finished carries none, so the field
+is optional.
 
 ### `inst.read(query, options?)` → `ReadResult`
 
@@ -406,8 +416,8 @@ const result = await inst.read("Does invoice INV-42 exist?", { skipSuggestionCap
 
 A write is normally free to touch anything in the instance: the extractor sees
 the text alone, and whatever it produces is reconciled against the whole
-instance. Pass a `scope` to anchor a text write to a set of concrete existing
-objects instead — the same `ScopeObject` shape as a scoped read:
+instance. Pass a `scope` to anchor a text write to a set of concrete objects
+instead — the same `ScopeObject` shape as a scoped read:
 
 ```typescript
 const result = await inst.write(
@@ -416,18 +426,56 @@ const result = await inst.write(
 );
 ```
 
-This does two things at once. The scoped objects' **current values** are shown
-to the extractor, so the new information is folded into them instead of
-producing a near-duplicate record. And the write is then **confined** to the
-scope: it may only modify or delete the scoped objects, and create new objects
-and relations anchored to them. A write that would touch any other existing
-object fails with a validation error rather than applying partially — that
+The write is **confined** to the scope: it may only modify or delete the scoped
+objects, and create new objects and relations anchored to them. That
 confinement is checked against the resulting plan, so it holds regardless of
-what the extractor produced.
+what the extractor produced. Extraction itself is unchanged by a scope — it
+runs on the text alone, so the text still names the objects it means.
 
 A write scope takes the same `ScopeObject`s as a read scope, identified the same
 way. Unlike a read scope there is no `relationsScope`: the relations among the
 scoped objects always accompany the extraction hint.
+
+**What becomes of a change that falls outside the scope is the scope's `mode`.**
+By default (`mode: "reject"`) a write that would touch any other existing object
+fails with a validation error rather than applying partially — the write is
+all-or-nothing, and one stray sentence in the text costs you the whole thing.
+
+Pass `mode: "drop"` and it applies anyway. The write runs the plan it would have
+run unscoped, minus every out-of-scope change and every change that depended on
+one, and reports what it left out on `changes.skipped_out_of_scope`:
+
+```typescript
+const result = await inst.write(
+  "Alice Smith is a surgeon now, and her colleague Bob Lee moved to Rotterdam.",
+  {
+    scope: {
+      objects: [{ type: "Person", key: { full_name: "Alice Smith" } }],
+      mode: "drop",
+    },
+  },
+);
+
+for (const skipped of result.changes.skipped_out_of_scope ?? []) {
+  console.log(skipped.operation, skipped.object_type_name, skipped.identity, skipped.fields, skipped.count);
+  // "update" "Person" "" ["city"] 1
+  //                   ^ empty: the scope never named Bob Lee
+}
+```
+
+Dropping only ever *removes* changes. The write never gains a change it would
+not otherwise have made, and never re-points one at a scoped record instead —
+so `"drop"` narrows a write, it does not redirect it. Each entry stands for
+`count` records of one `operation` (`"create"`, `"update"`, `"delete"`,
+`"merge"`, `"link"` or `"unlink"`) on one type, and `identity` renders the
+record's primary key as `field='value'` **only when the scope itself named that
+record**; otherwise it is empty, meaning "some other record of this type". The
+list is omitted when nothing was skipped, so treat `undefined` and `[]` alike.
+
+Because a dropped write succeeds, this is also the mode that makes "create or
+update exactly this record" expressible: under `"drop"` a scoped record need not
+be stored yet, and the write creates it if it is missing. Under `"reject"` every
+scoped record must already exist.
 
 Things to know before reaching for it:
 
@@ -437,13 +485,23 @@ Things to know before reaching for it:
   anchor to.
 - Only objects of a type with a **user-defined primary key** can be scoped. A
   scope names records by that key, so a type declared `primary_key: []` has
-  nothing to name its records by.
-- The server currently accepts a scope with **fast extraction only**, and caps
-  the number of scoped objects per write. Both are server-side rules, so they
-  surface as an `XmemoryAPIError`.
-- A scoped write additionally requires **read** permission on the instance,
-  because the scoped objects' current values are shown to the extractor. An API
-  key with write access alone is refused.
+  nothing to name its records by — and `"drop"` never creates a record of such a
+  type, for the same reason.
+- `"drop"` is computed by the server's **diff engine**, so asking for it with
+  `diffEngine: false` is refused with a 400. `"reject"` has no such requirement.
+- The server caps the number of scoped objects per write, and can have scoped
+  writes disabled entirely. Both are server-side rules, so they surface as an
+  `XmemoryAPIError`.
+- A scoped write additionally requires **read** permission on the instance: the
+  response carries the previous value of every field the write changed,
+  resolving a scope answers whether each named object is stored, and a
+  drop-mode report says what the skipped changes would have written. An API key
+  with write access alone is refused.
+- `mode` is sent only when it changes something: leaving it unset and setting it
+  to `"reject"` both put no `mode` on the wire, so naming the default for the
+  next reader keeps working against a server that predates the field. A server
+  that predates it rejects an unknown body field, so only send `"drop"` to one
+  that carries it.
 
 ### `inst.extract(text, options?)` → `ExtractResult`
 

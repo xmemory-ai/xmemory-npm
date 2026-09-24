@@ -65,7 +65,15 @@ function buildWriteBody(
   };
   if (options?.diffEngine != null) body.use_diff_engine = options.diffEngine;
   if (options?.scope != null) {
-    body.scope = { objects: serializeScopeObjects(options.scope.objects) };
+    const scope: Record<string, unknown> = { objects: serializeScopeObjects(options.scope.objects) };
+    // Only a mode that changes something is sent. The server omits `mode` at its
+    // default, so a scope that does not ask for `"drop"` stays byte-identical for a
+    // server that predates the field — a caller who spells the default out for the
+    // next reader does not thereby require a newer deployment.
+    if (options.scope.mode != null && options.scope.mode !== "reject") {
+      scope.mode = options.scope.mode;
+    }
+    body.scope = scope;
   }
   return body;
 }
@@ -321,15 +329,25 @@ export class InstanceHandle {
    * `values` clears that field). `extractionLogic` / `diffEngine` only apply
    * to the text form.
    *
-   * Pass `scope` — a `WriteScope` of concrete existing objects, each named by
-   * its user-defined primary key — to anchor a text write to them. Their current
-   * values are shown to the extractor so the write updates them instead of
-   * creating duplicates, and the write is then confined to the scope: it may
-   * only modify or delete the scoped objects and create new objects and
-   * relations anchored to them. A write that would touch any other existing
-   * object fails. The server accepts a scope with fast extraction only, and a
-   * scoped write additionally requires read permission on the instance, because
-   * the scoped objects' values are shown to the extractor.
+   * Pass `scope` — a `WriteScope` of concrete objects, each named by its
+   * user-defined primary key — to anchor a text write to them. The write is
+   * then confined to the scope: it may only modify or delete the scoped objects
+   * and create new objects and relations anchored to them. Extraction is
+   * unchanged by a scope — it runs on the text alone, so the text still names
+   * the objects it means.
+   *
+   * What becomes of a change that falls outside is the scope's `mode`. Under
+   * `"reject"` (the default) a write that would touch any other existing object
+   * fails, and nothing applies. Under `"drop"` that change is skipped — along
+   * with anything that depended on it — the rest applies, and what was left out
+   * comes back on `result.changes.skipped_out_of_scope`. `"drop"` also lets the
+   * write create a scoped record that is not stored yet, and is computed by the
+   * diff engine, so passing `diffEngine: false` with it is a 400.
+   *
+   * A scoped write additionally requires read permission on the instance: the
+   * response carries the previous value of every field the write changed,
+   * resolving a scope answers whether each named object is stored, and a
+   * drop-mode report says what the skipped changes would have written.
    */
   async write(text: string, options?: WriteOptions): Promise<WriteResult>;
   async write(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<WriteResult>;
@@ -346,8 +364,9 @@ export class InstanceHandle {
   /**
    * Submit a write job and return immediately with a `write_id` for polling.
    * Accepts the same text / `WriteMutation[]` dual input as {@link write}, and
-   * the same `scope`. A scope violation is reported by {@link writeStatus} as a
-   * failed write.
+   * the same `scope`. Under the default `"reject"` mode a scope violation is
+   * reported by {@link writeStatus} as a failed write; under `"drop"` the write
+   * completes, and what it skipped rides the completed status as `changes`.
    */
   async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult>;
   async writeAsync(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<AsyncWriteResult>;
@@ -365,6 +384,11 @@ export class InstanceHandle {
     return withConsoleUrl({ ...result, trace_id: typeof traceId === "string" ? traceId : null });
   }
 
+  /**
+   * Poll a queued write. A finished one carries `changes` — the same report
+   * {@link write} returns inline, including what a `"drop"`-mode scope skipped;
+   * a status for a write that has not finished carries none.
+   */
   async writeStatus(writeId: string, options?: RequestOptions): Promise<WriteStatusResult> {
     return withConsoleUrl(
       await this._requestOne<Omit<WriteStatusResult, "console_url"> & { console_url?: string | null }>(

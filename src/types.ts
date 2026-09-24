@@ -56,15 +56,49 @@ export interface ReadScope {
 }
 
 /**
- * A write's scope: the concrete existing `objects` the write is anchored to.
- * Their current values are shown to the extractor so the write updates them
- * instead of creating duplicates, and the write is then confined to them — it
+ * What a scoped write does with a change that falls outside its scope.
+ *
+ * `"reject"` — the server's default — is all-or-nothing: a plan that would
+ * touch anything outside the scope fails the whole write, and nothing applies.
+ *
+ * `"drop"` applies the rest. The write runs the plan it would have run
+ * unscoped, minus every out-of-scope change and every change that depended on
+ * one, and reports what it left out as
+ * {@link WriteChanges.skipped_out_of_scope}. It only ever removes changes: it
+ * never adds one and never re-targets one at a scoped record, so `"drop"`
+ * narrows a write rather than redirecting it.
+ *
+ * Two further differences from `"reject"`. A scoped record need not be stored
+ * yet — `"drop"` may create a record whose primary key the scope names, which
+ * is what makes "create or update exactly this record" expressible, while
+ * `"reject"` requires every scoped record to exist already. And a type that
+ * declares no user-defined primary key is never created under `"drop"`, since
+ * a scope has no way to name such a record. `"drop"` is computed by the
+ * server's diff engine, so pairing it with `diffEngine: false` is a 400.
+ */
+export type WriteScopeMode = "reject" | "drop";
+
+/**
+ * A write's scope: the concrete `objects` the write is anchored to, and what to
+ * do with a change that falls outside them. The write is confined to them — it
  * may only modify or delete the scoped objects and create new objects and
- * relations anchored to them. Unlike `ReadScope` there is no relation policy:
- * the relations among the scoped objects always accompany the hint.
+ * relations anchored to them. Extraction is unchanged by a scope: it runs on
+ * the text alone, so the text still names the objects it means.
+ *
+ * Unlike `ReadScope`, the second field is not a relation policy: relation
+ * changes follow the confinement rule, and there is nothing to choose. It is
+ * the out-of-scope `mode`, which decides whether the write fails or reports
+ * what it skipped.
  */
 export interface WriteScope {
   objects: ScopeObject[];
+  /**
+   * `"reject"` by default. Left unset — or set to `"reject"` — nothing is sent,
+   * so naming the default for the reader's sake still leaves the request
+   * byte-identical for a server that predates the field. See
+   * {@link WriteScopeMode}.
+   */
+  mode?: WriteScopeMode;
 }
 
 export type WriteQueueStatus =
@@ -392,13 +426,68 @@ export interface ReadResult {
   readonly related_types: RelatedTypes | null;
 }
 
+/**
+ * One bundle of changes a `"drop"`-mode scoped write left out instead of
+ * applying: one operation on one type, standing for `count` records.
+ */
+export interface SkippedOutOfScope {
+  /**
+   * What the skipped changes would have done. `"link"` / `"unlink"` are
+   * relation changes, the rest object ones.
+   *
+   * Widened with `(string & {})` like the advisory values further down this
+   * file, so an operation named by a server newer than this release is still
+   * typed rather than rejected. One you do not recognise still means the same
+   * thing — something was skipped — so report it rather than dropping the entry.
+   */
+  readonly operation: "create" | "update" | "delete" | "merge" | "link" | "unlink" | (string & {});
+  /** The object type, or the relation type for `"link"` / `"unlink"`. */
+  readonly object_type_name: string;
+  /**
+   * The skipped record's primary key, rendered `field='value'` — and **empty
+   * unless the scope itself named that record**. The server identifies a record
+   * here only when the caller already knew of it, so an empty string reads as
+   * "some other record of this type", not as "a record with no key".
+   */
+  readonly identity: string;
+  /** The field names the skipped changes would have written. */
+  readonly fields: readonly string[];
+  /** How many records this entry stands for. */
+  readonly count: number;
+}
+
+/**
+ * What a write did, grouped into `created` / `updated` / `deleted`, plus what a
+ * `"drop"`-mode scope left out.
+ *
+ * The three groups stay `unknown`: their shape is the server's to evolve and
+ * this client has never modelled it. `skipped_out_of_scope` is typed because it
+ * is the one part a caller has to branch on — a `"drop"`-mode write succeeds
+ * whether or not it skipped anything, so this list is the only report that some
+ * of what the text said was not applied.
+ */
+export interface WriteChanges {
+  readonly created: unknown;
+  readonly updated: unknown;
+  readonly deleted: unknown;
+  /**
+   * Omitted by the server when nothing was skipped — which is every write that
+   * did not ask for `"drop"` — so `undefined` and `[]` both mean "nothing left
+   * out". Branch on whether there are entries, not on whether the key is there.
+   */
+  readonly skipped_out_of_scope?: readonly SkippedOutOfScope[];
+}
+
 export interface WriteResult {
   readonly write_id: string;
   readonly trace_id: string | null;
   /** Deep link to this write's trace in the console; `null` if no console is configured. */
   readonly console_url: string | null;
-  /** What the write did, grouped into `created` / `updated` / `deleted`. */
-  readonly changes: unknown;
+  /**
+   * What the write did, grouped into `created` / `updated` / `deleted`, and —
+   * for a scoped write in `"drop"` mode — what it skipped instead of applying.
+   */
+  readonly changes: WriteChanges;
 }
 
 export interface AsyncWriteResult {
@@ -416,6 +505,17 @@ export interface WriteStatusResult {
   readonly console_url: string | null;
   readonly error_detail: string | null;
   readonly completed_at: string | null;
+  /**
+   * What the finished write did, in the same shape {@link WriteResult.changes}
+   * carries — and the async caller's only view of it, since `writeAsync`
+   * returns before the write has done anything. It is therefore where a
+   * `"drop"`-mode scope reports what it skipped.
+   *
+   * Optional because a status is not always about a finished write: a queued,
+   * in-progress, failed or unknown `write_id` carries none. Read it once
+   * `write_status` is `"completed"`.
+   */
+  readonly changes?: WriteChanges;
 }
 
 export interface ExtractResult {

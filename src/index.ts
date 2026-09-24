@@ -40,7 +40,7 @@ export type {
 } from "./types.js";
 
 // Scope
-export type { ScopeObject, ReadScope, WriteScope, RelationsScope } from "./types.js";
+export type { ScopeObject, ReadScope, WriteScope, RelationsScope, WriteScopeMode } from "./types.js";
 
 // Options
 export type {
@@ -73,6 +73,8 @@ export type {
   RelatedTypesObjectType,
   RelatedTypesRelation,
   WriteResult,
+  WriteChanges,
+  SkippedOutOfScope,
   AsyncWriteResult,
   WriteStatusResult,
   ExtractResult,
