@@ -45,15 +45,23 @@ async function main(): Promise<void> {
 
   console.log(`Proposal ${proposal.proposal_version} (schema v${proposal.schema_version}):`);
   for (const item of proposal.items) {
-    console.log(`  - [${item.item_fingerprint}] ${item.rationale}`);
+    const blocked = item.apply_blocked ? " (cannot be applied as proposed)" : "";
+    console.log(`  - [${item.item_fingerprint}]${blocked} ${item.rationale}`);
     console.log(`      op:`, item.op);
   }
 
-  // 2. Decide — accept everything here; in practice you'd choose per item.
-  const decisions: DecisionInput[] = proposal.items.map((item) => ({
-    item_fingerprint: item.item_fingerprint,
-    decision: "accept",
-  }));
+  // 2. Decide — accept everything that can be applied; in practice you'd
+  //    choose per item. An apply_blocked item would fail the whole apply.
+  const decisions: DecisionInput[] = proposal.items
+    .filter((item) => !item.apply_blocked)
+    .map((item) => ({
+      item_fingerprint: item.item_fingerprint,
+      decision: "accept",
+    }));
+  if (decisions.length === 0) {
+    console.log("Every suggestion is blocked; nothing to accept.");
+    return;
+  }
   const decided = await inst.decideSuggestions(proposal.proposal_version, decisions);
   for (const warning of decided.warnings) {
     console.log(`  dependency warning: ${warning.kind} — ${warning.guidance}`);

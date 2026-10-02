@@ -813,6 +813,15 @@ export interface ProposalItem {
   readonly depends_on: string[];
   readonly current_decision: string | null;
   readonly rationale: string;
+  /**
+   * `true` when the change cannot be applied as proposed — for example a field
+   * that another item in the same proposal already adds as part of a new
+   * object. Accepting it fails the whole apply, and `rationale` says why, so
+   * leave it out of a bulk accept: the items not flagged apply together. The
+   * server re-derives the flag on every review. Absent on a server that
+   * predates it, which means every item can be applied.
+   */
+  readonly apply_blocked?: boolean;
 }
 
 export interface ConsolidatedProposal {

@@ -2,6 +2,31 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.15.0
+
+Types which suggestions can be applied together. The API sends `apply_blocked`
+on every proposal item; it reached callers at runtime but was missing from
+`ProposalItem`, so a typed bulk accept had no field to filter on.
+
+### Added
+
+- `ProposalItem.apply_blocked` — `true` when the change cannot be applied as
+  proposed, for example a field that another item in the same proposal already
+  adds as part of a new object. Accepting such an item fails the whole apply,
+  and `rationale` says why; the items not flagged apply together. Optional: a
+  server that predates the flag sends no key, which means every item can be
+  applied, as before.
+
+### Changed
+
+- The README's suggestion-engine flow and `examples/suggestionEngineFlow.ts`
+  leave blocked items out of the bulk accept.
+
+### Notes
+
+The flag is re-derived on every review, so read it from the latest
+`reviewSuggestions()` rather than caching it across reviews.
+
 ## 3.14.0
 
 A scoped write can now drop what falls outside the scope instead of failing over
