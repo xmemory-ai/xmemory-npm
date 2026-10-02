@@ -578,11 +578,14 @@ if (review.status === "evolution_in_progress") {
     console.log(item.item_fingerprint, item.rationale, item.op);
   }
 
-  // 2. Decide — accept / reject / defer per item, in one batch.
-  const decisions: DecisionInput[] = proposal.items.map((item) => ({
-    item_fingerprint: item.item_fingerprint,
-    decision: "accept",
-  }));
+  // 2. Decide — accept / reject / defer per item, in one batch. Leave out
+  //    items flagged apply_blocked: accepting one fails the whole apply.
+  const decisions: DecisionInput[] = proposal.items
+    .filter((item) => !item.apply_blocked)
+    .map((item) => ({
+      item_fingerprint: item.item_fingerprint,
+      decision: "accept",
+    }));
   const decided = await inst.decideSuggestions(proposal.proposal_version, decisions);
 
   // 3. Apply — commit accepted decisions as one migration.
@@ -593,6 +596,11 @@ if (review.status === "evolution_in_progress") {
 
 When `status === "evolution_in_progress"`, back off for `retry_after_seconds`
 and retry instead of blocking.
+
+An item with `apply_blocked: true` cannot be applied as proposed — for example
+a field that another item in the same proposal already adds as part of a new
+object — and its `rationale` says why. Accepting it fails the whole apply, so a
+bulk accept should skip it; the remaining items apply together.
 
 ### Direct migration flow (enhance → dry-run → update)
 

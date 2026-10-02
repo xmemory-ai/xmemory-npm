@@ -812,6 +812,57 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
 }
 
 // ---------------------------------------------------------------------------
+// Schema evolution — reviewSuggestions carries apply_blocked per item
+// ---------------------------------------------------------------------------
+
+{
+  const orig = globalThis.fetch;
+  const item = {
+    op: { op_type: "add_field" },
+    evidence_feedback_ids: [],
+    evidence_query_samples: [],
+    frequency: 1,
+    depends_on: [],
+    current_decision: null,
+    rationale: "queried but missing",
+  };
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          status: "ok",
+          instance_id: "inst-1",
+          retry_after_seconds: null,
+          proposal: {
+            instance_id: "inst-1",
+            proposal_version: "v1",
+            schema_version: 4,
+            generated_at: "2026-06-01T12:00:00Z",
+            notes: [],
+            items: [
+              { ...item, item_fingerprint: "fp-object", apply_blocked: false },
+              { ...item, item_fingerprint: "fp-field", apply_blocked: true },
+              // A server that predates the flag sends no key at all.
+              { ...item, item_fingerprint: "fp-legacy" },
+            ],
+          },
+        },
+      ],
+    },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const review = await c.instance("inst-1").reviewSuggestions();
+  const items = review.proposal?.items ?? [];
+  check("reviewSuggestions apply_blocked true", items[1]?.apply_blocked === true);
+  check("reviewSuggestions apply_blocked false", items[0]?.apply_blocked === false);
+  check("reviewSuggestions apply_blocked absent", items[2]?.apply_blocked === undefined);
+  const appliable = items.filter((i) => !i.apply_blocked).map((i) => i.item_fingerprint);
+  check("reviewSuggestions bulk accept skips blocked", appliable.join(",") === "fp-object,fp-legacy");
+  globalThis.fetch = orig;
+}
+
+// ---------------------------------------------------------------------------
 // Schema evolution — decideSuggestions body + structured error code
 // ---------------------------------------------------------------------------
 
