@@ -819,7 +819,7 @@ export interface ProposalItem {
    * object. Accepting it fails the whole apply, and `rationale` says why, so
    * leave it out of a bulk accept: the items not flagged apply together. The
    * server re-derives the flag on every review. Absent on a server that
-   * predates it, which means every item can be applied.
+   * predates it; treat that as not flagged.
    */
   readonly apply_blocked?: boolean;
 }
@@ -1097,6 +1097,7 @@ export interface ApiError {
   readonly message: string;
   readonly field?: string;
   readonly resource_id?: string;
+  readonly details?: Record<string, unknown> | null;
 }
 
 export interface RawApiResponse {

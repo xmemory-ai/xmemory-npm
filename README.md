@@ -586,11 +586,13 @@ if (review.status === "evolution_in_progress") {
       item_fingerprint: item.item_fingerprint,
       decision: "accept",
     }));
-  const decided = await inst.decideSuggestions(proposal.proposal_version, decisions);
+  if (decisions.length > 0) {
+    const decided = await inst.decideSuggestions(proposal.proposal_version, decisions);
 
-  // 3. Apply — commit accepted decisions as one migration.
-  const applied = await inst.applyPendingDecisions(decided.next_proposal_version);
-  console.log(applied.status, applied.summary); // e.g. "ok" "added 1 field"
+    // 3. Apply — commit accepted decisions as one migration.
+    const applied = await inst.applyPendingDecisions(decided.next_proposal_version);
+    console.log(applied.status, applied.summary); // e.g. "ok" "added 1 field"
+  }
 }
 ```
 
@@ -600,7 +602,9 @@ and retry instead of blocking.
 An item with `apply_blocked: true` cannot be applied as proposed — for example
 a field that another item in the same proposal already adds as part of a new
 object — and its `rationale` says why. Accepting it fails the whole apply, so a
-bulk accept should skip it; the remaining items apply together.
+bulk accept should skip it; the remaining items apply together. When every item
+is flagged there is nothing to accept: skip the decide call, which refuses an
+empty batch with `invalid_decision_input`.
 
 ### Direct migration flow (enhance → dry-run → update)
 

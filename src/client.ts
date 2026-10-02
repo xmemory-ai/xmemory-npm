@@ -424,12 +424,33 @@ export class XmemoryClient {
       );
     }
 
+    // The schema-evolution endpoints answer an error as a bare
+    // `{status: "error", error_type, ...}` payload. A long-running call answers
+    // 200 before it finishes, so that payload can arrive on a 2xx response; it
+    // is thrown here with its code and details, exactly as on a non-2xx one.
+    if (own(payload, "status") === "error" && typeof own(payload, "error_type") === "string") {
+      const structured = extractStructuredError(payload);
+      throw new XmemoryAPIError(
+        `HTTP ${res.status}: ${structured.message ?? structured.code}`,
+        res.status,
+        structured.code,
+        structured.details,
+        parseRetryAfter(res),
+      );
+    }
+
     const response = payload as RawApiResponse;
 
     const responseErrors = ownArray(response, "errors");
     if (responseErrors.length > 0) {
       const first = responseErrors[0] as ApiError;
-      throw new XmemoryAPIError(`API error: ${first.message} (${first.code})`, res.status, first.code);
+      throw new XmemoryAPIError(
+        `API error: ${first.message} (${first.code})`,
+        res.status,
+        first.code,
+        first.details ?? null,
+        parseRetryAfter(res),
+      );
     }
 
     return response;
