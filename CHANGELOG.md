@@ -4,23 +4,32 @@ All notable changes to the `xmemory` npm package are documented here.
 
 ## 3.15.0
 
-Types which suggestions can be applied together. The API sends `apply_blocked`
-on every proposal item; it reached callers at runtime but was missing from
-`ProposalItem`, so a typed bulk accept had no field to filter on.
+Types the flag that says which suggestions can be applied together, and keeps
+the structured code on every schema-evolution error.
 
 ### Added
 
-- `ProposalItem.apply_blocked` — `true` when the change cannot be applied as
-  proposed, for example a field that another item in the same proposal already
-  adds as part of a new object. Accepting such an item fails the whole apply,
-  and `rationale` says why; the items not flagged apply together. Optional: a
-  server that predates the flag sends no key, which means every item can be
-  applied, as before.
+- `ProposalItem.apply_blocked` — the review endpoint marks each proposal item
+  that cannot be applied as proposed, for example a field that another item in
+  the same proposal already adds as part of a new object. Accepting such an
+  item fails the whole apply, and `rationale` says why; the items not flagged
+  apply together. Optional: a server that predates the flag sends no key; treat
+  that as not flagged.
 
 ### Changed
 
 - The README's suggestion-engine flow and `examples/suggestionEngineFlow.ts`
   leave blocked items out of the bulk accept.
+
+### Fixed
+
+- A schema-evolution error that arrives on a 2xx response now throws with its
+  `code` and `details`. A long-running review, decide or apply call answers 200
+  before it finishes, so its error payload can follow a 200; it threw "Expected
+  one item …, got none" with no `code`, which a caller retrying on
+  `stale_proposal_version` could not match.
+- An `errors` envelope on a 2xx response now carries its `details` and
+  `retryAfter` on the thrown error, as a non-2xx response already did.
 
 ### Notes
 

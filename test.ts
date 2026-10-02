@@ -890,6 +890,65 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
 }
 
 {
+  // A long-running call answers 200 before it finishes, then sends the
+  // schema-evolution error payload: it must still throw with its code.
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      "   " +
+        JSON.stringify({
+          status: "error",
+          error_type: "apply_failed",
+          error_message: "Re-review.",
+          details: { detached_accept_fingerprints: ["fp1"] },
+        }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )) as FetchFn;
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.instance("inst-1").applyPendingDecisions("tok-1");
+    check("schema error on a 200 throws", false);
+  } catch (e) {
+    check("schema error on a 200 is an XmemoryAPIError", e instanceof XmemoryAPIError);
+    check("schema error on a 200 keeps its code", (e as XmemoryAPIError).code === "apply_failed");
+    const details = (e as XmemoryAPIError).details as { detached_accept_fingerprints?: string[] } | null;
+    check("schema error on a 200 keeps its details", details?.detached_accept_fingerprints?.[0] === "fp1");
+  }
+  globalThis.fetch = orig;
+}
+
+{
+  // An `errors` envelope on a 200 keeps its details and Retry-After, as on a non-2xx response.
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      ids: [],
+      items: [],
+      errors: [
+        {
+          code: "QUOTA_EXCEEDED",
+          message: "Daily token quota exhausted.",
+          details: { kind: "daily_quota_exceeded", retry_after_seconds: 3600 },
+        },
+      ],
+    },
+    headers: { "Retry-After": "3600" },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  try {
+    await c.admin.getCluster("cl-1");
+    check("errors envelope on a 200 throws", false);
+  } catch (e) {
+    const err = e as XmemoryAPIError;
+    check("errors envelope on a 200 keeps its code", err.code === "QUOTA_EXCEEDED");
+    check("errors envelope on a 200 keeps its details", err.details?.kind === "daily_quota_exceeded");
+    check("errors envelope on a 200 keeps Retry-After", err.retryAfter === 3600);
+  }
+  globalThis.fetch = orig;
+}
+
+{
   // Structured schema-evolution error: error_type surfaces as `code`.
   const orig = globalThis.fetch;
   globalThis.fetch = mockFetch(() => ({
