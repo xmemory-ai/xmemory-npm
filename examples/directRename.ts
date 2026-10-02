@@ -5,11 +5,11 @@
  * server emits a structured migration plan; you preview the DDL, then apply it.
  * A rename preserves data (unlike remove + add, which would drop the column).
  *
- * Requires `js-yaml` (npm i js-yaml @types/js-yaml). Run against a staging
+ * Requires `js-yaml` (npm i js-yaml @types/js-yaml). Run against a test
  * instance:
  *
  *   export XMEM_API_KEY=xmem_...
- *   export XMEM_API_URL=https://api.stg.xmemory.ai   # optional; defaults to prod
+ *   export XMEM_API_URL=<api-url>   # optional; defaults to https://api.xmemory.ai
  *   export XMEM_CLUSTER_ID=<cluster-id>
  *   export XMEM_INSTANCE_ID=<instance-id>
  *   npx tsx examples/directRename.ts
