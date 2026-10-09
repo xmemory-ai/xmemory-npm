@@ -1693,6 +1693,120 @@ async function captureRequest(
   check("an operation this release has not heard of is still typed", later.operation === "restore");
 }
 
+{
+  // Two reports past the server's 100-entry cap, in excerpt. Their entries come
+  // from the API's own folding code, serialized through its write reply. The
+  // first (100 entries for 121 updates) kept 99 as they were, the record the
+  // scope named first, and folded the rest into one entry per operation and
+  // type. The second (100 entries for 230 creates of as many types) had more folded
+  // pairs than room, so it kept none as they were and folded the last pairs once
+  // more, per operation. Only folded entries carry the key.
+  const perType = [
+    {
+      operation: "update",
+      object_type_name: "Person",
+      identity: "full_name='Alice Smith'",
+      fields: ["role"],
+      count: 1,
+    },
+    {
+      operation: "update",
+      object_type_name: "Person",
+      identity: "",
+      fields: ["field_000"],
+      count: 1,
+    },
+    {
+      operation: "update",
+      object_type_name: "Person",
+      identity: "",
+      fields: [],
+      count: 22,
+      folded: true,
+    },
+  ];
+  const perOperation = [
+    {
+      operation: "create",
+      object_type_name: "Type000",
+      identity: "",
+      fields: [],
+      count: 1,
+      folded: true,
+    },
+    {
+      operation: "create",
+      object_type_name: "",
+      identity: "",
+      fields: [],
+      count: 131,
+      folded: true,
+    },
+  ];
+  let skipped: unknown = perType;
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url) => {
+    const changes = { created: [], updated: [], deleted: [], skipped_out_of_scope: skipped };
+    if (url.endsWith("/write_status")) {
+      return {
+        status: 200,
+        body: {
+          items: [
+            {
+              write_id: "w1",
+              write_status: "completed",
+              error_detail: null,
+              completed_at: "2026-10-09T10:00:00Z",
+              changes,
+            },
+          ],
+        },
+      };
+    }
+    return { status: 200, body: { items: [{ write_id: "w1", trace_id: "t1", changes }] } };
+  });
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const inst = c.instance("inst-1");
+  const scope = { objects: [{ type: "Person", key: { full_name: "Alice Smith" } }], mode: "drop" as const };
+
+  const first = (await inst.write("Alice Smith is a surgeon now.", { scope })).changes.skipped_out_of_scope ?? [];
+  check("folded: an entry kept as it was carries no flag", first[0].folded === undefined && first[1].folded === undefined);
+  check("folded: the record the scope named is kept first, by name", first[0].identity === "full_name='Alice Smith'");
+  check(
+    "folded: a per-type fold has no identity and no fields, and sums its count",
+    first[2].folded === true &&
+      first[2].object_type_name === "Person" &&
+      first[2].identity === "" &&
+      first[2].fields.length === 0 &&
+      first[2].count === 22,
+  );
+
+  skipped = perOperation;
+  const second = (await inst.write("Alice Smith is a surgeon now.", { scope })).changes.skipped_out_of_scope ?? [];
+  check("folded: past 100 folded pairs, every entry is folded", second.every((entry) => entry.folded === true));
+  check(
+    "folded: a per-operation fold has an empty object type too",
+    second[1].operation === "create" && second[1].object_type_name === "" && second[1].count === 131,
+  );
+
+  const status = await inst.writeStatus("w1");
+  check("folded: a completed status carries the folded entries", status.changes?.skipped_out_of_scope?.[1].folded === true);
+
+  globalThis.fetch = origFetch;
+}
+
+{
+  // The flag is optional: an entry from a server that predates the cap, without
+  // it, is a SkippedOutOfScope, and so is a folded one. `npm test` type-checks
+  // src/ only, so these lines are checked as types by `tsc --strict test.ts`, not
+  // by the test run.
+  const before: SkippedOutOfScope = { operation: "update", object_type_name: "Person", identity: "", fields: ["city"], count: 1 };
+  const folded: SkippedOutOfScope = { ...before, fields: [], count: 40, folded: true };
+  check("folded: optional in the type", before.folded === undefined && folded.folded === true);
+}
+
 // ---------------------------------------------------------------------------
 // Request URLs are composed from the configured base
 
