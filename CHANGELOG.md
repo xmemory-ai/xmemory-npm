@@ -2,6 +2,29 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.16.0
+
+Types the flag that marks a folded entry of a drop-mode write's skip report.
+
+### Added
+
+- `SkippedOutOfScope.folded` — the server lists at most 100 entries in
+  `changes.skipped_out_of_scope`. Past that, entries are kept as they are while
+  there is room, those that name a record first, and the rest arrive folded: one
+  entry per `operation` and `object_type_name`, marked `folded: true`, with an
+  empty `identity`, no `fields` and the summed `count`. When even those would be
+  more than 100, none is kept as it was, and the last folded entries are folded
+  once more per `operation`, with an empty `object_type_name` too. Summing
+  `count` per operation still gives the true totals. Optional: an entry without
+  the flag is not folded, and a server that predates the cap never sends it. The
+  entries already reached callers untouched; reading `.folded` no longer needs a
+  cast.
+
+### Changed
+
+- The README's drop-mode section and the `SkippedOutOfScope` docs describe the
+  cap and folded entries.
+
 ## 3.15.0
 
 Types the flag that says which suggestions can be applied together, and keeps

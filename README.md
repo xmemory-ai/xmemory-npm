@@ -472,6 +472,16 @@ record's primary key as `field='value'` **only when the scope itself named that
 record**; otherwise it is empty, meaning "some other record of this type". The
 list is omitted when nothing was skipped, so treat `undefined` and `[]` alike.
 
+The list holds at most 100 entries. Past that, entries are kept as they are
+while there is room, those that name a record first, and the rest arrive folded:
+one entry per `operation` and type, marked `folded: true`, with an empty
+`identity`, no `fields` and the summed `count`. When even those would be more
+than 100, none is kept as it was, and the last folded entries are folded once
+more, into one entry per `operation` whose `object_type_name` is empty too.
+Unnamed entries are folded before named ones, but a record the scope named can
+still end up inside a folded entry. Summing `count` per `operation` still gives
+the true totals, and an entry without `folded` means what it always did.
+
 Because a dropped write succeeds, this is also the mode that makes "create or
 update exactly this record" expressible: under `"drop"` a scoped record need not
 be stored yet, and the write creates it if it is missing. Under `"reject"` every

@@ -428,7 +428,13 @@ export interface ReadResult {
 
 /**
  * One bundle of changes a `"drop"`-mode scoped write left out instead of
- * applying: one operation on one type, standing for `count` records.
+ * applying: one operation on one type (any type, for an entry folded per
+ * operation), standing for `count` records.
+ *
+ * The server lists at most 100 entries. Past that, it folds entries into ones
+ * marked {@link SkippedOutOfScope.folded}, so the counts per operation still add
+ * up (and per type too, unless the entries were folded a second time, per
+ * operation).
  */
 export interface SkippedOutOfScope {
   /**
@@ -441,19 +447,41 @@ export interface SkippedOutOfScope {
    * thing — something was skipped — so report it rather than dropping the entry.
    */
   readonly operation: "create" | "update" | "delete" | "merge" | "link" | "unlink" | (string & {});
-  /** The object type, or the relation type for `"link"` / `"unlink"`. */
+  /**
+   * The object type, or the relation type for `"link"` / `"unlink"`. Empty on
+   * an entry folded per operation (see {@link SkippedOutOfScope.folded}).
+   */
   readonly object_type_name: string;
   /**
    * The skipped record's primary key, rendered `field='value'` — and **empty
    * unless the scope itself named that record**. The server identifies a record
    * here only when the caller already knew of it, so an empty string reads as
-   * "some other record of this type", not as "a record with no key".
+   * "some other record of this type", not as "a record with no key". Always
+   * empty on a folded entry.
    */
   readonly identity: string;
-  /** The field names the skipped changes would have written. */
+  /** The field names the skipped changes would have written; empty on a folded entry. */
   readonly fields: readonly string[];
-  /** How many records this entry stands for. */
+  /** How many records this entry stands for; on a folded entry, the summed `count` of the entries folded into it. */
   readonly count: number;
+  /**
+   * `true` on an entry that stands for one or more left-out entries folded
+   * together; absent on every other entry, so an entry without it keeps the
+   * meaning above.
+   *
+   * The server lists at most 100 entries. Past that, it keeps entries as they
+   * are while there is room, those that name a record first, and folds the rest
+   * into one entry per `operation` and `object_type_name`, with an empty
+   * `identity`, no `fields` and the summed `count`. Unnamed entries are folded
+   * before named ones, but a record the scope named can still end up inside a
+   * folded entry. When even the folded entries would be more than 100, none is
+   * kept as it was, and the last folded entries are folded once more, into one
+   * entry per `operation` whose `object_type_name` is empty too. Either way,
+   * summing `count` per operation gives the true totals.
+   *
+   * Optional: a server that predates the cap never sends it, and never folds.
+   */
+  readonly folded?: boolean;
 }
 
 /**
@@ -474,6 +502,9 @@ export interface WriteChanges {
    * Omitted by the server when nothing was skipped — which is every write that
    * did not ask for `"drop"` — so `undefined` and `[]` both mean "nothing left
    * out". Branch on whether there are entries, not on whether the key is there.
+   *
+   * At most 100 entries; past that, the rest arrive folded (see
+   * {@link SkippedOutOfScope.folded}).
    */
   readonly skipped_out_of_scope?: readonly SkippedOutOfScope[];
 }
