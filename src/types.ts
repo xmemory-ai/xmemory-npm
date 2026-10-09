@@ -242,7 +242,7 @@ export interface InstanceSchemaInfo {
  * {@link ReadResult.reader_results} when the server decomposed a composite query
  * into independent sub-queries.
  *
- * `reader_result` gives one of the four answers described on
+ * `reader_result` gives one of the five answers described on
  * {@link ReadResult.reader_result}, with one more case: a sub-query whose SQL
  * failed carries the empty result *and* `error`, while the other sub-queries
  * are answered regardless. Its bytes then equal those of a sub-query that
@@ -258,6 +258,12 @@ export interface TaggedReaderResult {
    * with `status` 422 and `code` `"INVALID_INPUT"`.
    */
   readonly error: string | null;
+  /**
+   * Set when this sub-query could not be answered as asked (see
+   * {@link ReadResult.notice}); its empty `reader_result` is then not a
+   * no-match. `null` otherwise.
+   */
+  readonly notice: string | null;
 }
 
 // `console_url` appears on every result below. It is the deep link to that operation's
@@ -387,13 +393,18 @@ export interface ReadResult {
   /**
    * The answer, shaped by `readMode`. In `"single-answer"` mode it is always the
    * prose answer, never `null`. In `"raw-tables"` / `"xresponse"` mode its value
-   * says which of four answers the read gave:
+   * says which of five answers the read gave:
    *
    * - rows — answered;
    * - exactly `{ columns: [], rows: [] }` (`"raw-tables"`) or
-   *   `{ objects: [], relations: [] }` (`"xresponse"`) — the query executed and
-   *   matched nothing: every table and column it used exists, so the data is
-   *   absent;
+   *   `{ objects: [], relations: [] }` (`"xresponse"`) with `notice` null —
+   *   the query executed and matched nothing: every table and column it used
+   *   exists, so the data is absent;
+   * - the same empty value with `notice` set — the server could not run a query
+   *   that answers the question as asked, so the empty value says nothing about
+   *   what is stored. Rephrase the question (for example, name the exact value
+   *   to look up) rather than treating the data as absent. In
+   *   `"single-answer"` mode the answer is then the notice text itself;
    * - `null` — the schema provably cannot represent the concept. An answer in
    *   its own right, not a variant of the empty one: this memory cannot hold
    *   it, so a better-matching instance is worth trying;
@@ -403,8 +414,8 @@ export interface ReadResult {
    *
    * For a composite query this is the combined answer, folded from the parts:
    * rows if any sub-query answered; else the empty result if any executed and
-   * matched nothing; else `null`. `reader_results` carries each part's own
-   * answer.
+   * matched nothing, or could not be answered as asked; else `null`.
+   * `reader_results` carries each part's own answer.
    */
   readonly reader_result: unknown;
   /**
@@ -424,6 +435,16 @@ export interface ReadResult {
    * a requested read that executed nothing arrives with `touched: []` instead.
    */
   readonly related_types: RelatedTypes | null;
+  /**
+   * Set when the read, or one of its sub-queries, could not be answered as
+   * asked: the empty result beside it does not mean nothing is stored, so
+   * rephrase the question rather than treating the data as absent. On a
+   * composite read it is set when any part was affected, even if another part
+   * answered, and that part's entry in `reader_results` carries it too. `null`
+   * otherwise: the server omits the field on every other read, and a server
+   * that predates it never sends it; the client normalizes both to `null`.
+   */
+  readonly notice: string | null;
 }
 
 /**
