@@ -2189,6 +2189,43 @@ function checkClientHeader(label: string, identity: string | undefined): void {
   const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
   const res = await c.instance("inst-1").read("Which courses require an English test?");
   check("related_types is null when the read did not ask", Object.hasOwn(res, "related_types") && res.related_types === null);
+  check("notice is null when the server did not send it", Object.hasOwn(res, "notice") && res.notice === null);
+
+  globalThis.fetch = origFetch;
+}
+
+// A read the server could not answer as asked: the same empty value as a no-match, told apart by `notice` alone,
+// at the top level even when a sibling answered, and on the part it applies to.
+{
+  const notice = "This question could not be answered as asked.";
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          trace_id: "r-1",
+          reader_result: { columns: [{ name: "name", type: "text" }], rows: [["Ada"]] },
+          notice,
+          reader_results: [
+            { sub_query: "Who works here?", reader_result: { columns: [], rows: [["Ada"]] }, error: null },
+            { sub_query: "Whose name contains Najm?", reader_result: { columns: [], rows: [] }, error: null, notice },
+          ],
+        },
+      ],
+    },
+  }));
+
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const res = await c.instance("inst-1").read("Who works here, and whose name contains Najm?", { readMode: "raw-tables" });
+  check("the top-level notice arrives as the server sent it", res.notice === notice);
+  check(
+    "each part carries its own notice as an own property, null where the server sent none",
+    res.reader_results.every((part) => Object.hasOwn(part, "notice")) &&
+      res.reader_results[0].notice === null &&
+      res.reader_results[1].notice === notice,
+  );
+  check("a part's other fields are untouched", res.reader_results[1].error === null && res.reader_results[1].sub_query === "Whose name contains Najm?");
 
   globalThis.fetch = origFetch;
 }

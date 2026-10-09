@@ -264,13 +264,14 @@ Options: `{ readMode?, scope?, includeRelatedTypes?, relatedTypesDepth?, skipSug
 #### What comes back
 
 In `"single-answer"` mode `reader_result` is always the prose answer. In
-`"raw-tables"` and `"xresponse"` mode its value says which of four answers the
+`"raw-tables"` and `"xresponse"` mode its value says which of five answers the
 read gave:
 
 | `reader_result` | Meaning | What to do |
 | --- | --- | --- |
 | rows | Answered. | Use them. |
-| exactly `{ columns: [], rows: [] }` / `{ objects: [], relations: [] }` | The query executed and matched nothing — every table and column it used exists, so the data is absent. | Trust the empty result. |
+| exactly `{ columns: [], rows: [] }` / `{ objects: [], relations: [] }`, `notice` is `null` | The query executed and matched nothing — every table and column it used exists, so the data is absent. | Trust the empty result. |
+| the same empty value, `notice` set | The server could not run a query that answers the question as asked, so the empty value says nothing about what is stored. | Rephrase the question, for example by naming the exact value to look up. Do not treat the data as absent. |
 | `null` | The schema provably cannot represent the concept. An answer, not a variant of the empty one. | Try a better-matching instance; this memory cannot hold it. |
 | *(throws)* | Every sub-query's SQL failed, so nothing was answered. | Catch `XmemoryAPIError` with `status` 422 and `code` `"INVALID_INPUT"`. It is the same answer for the same input, so do not retry it. |
 
@@ -278,6 +279,8 @@ read gave:
 const result = await inst.read("Which invoices are overdue?", { readMode: "raw-tables" });
 if (result.reader_result === null) {
   // Not a concept this memory holds — try another instance.
+} else if (result.notice !== null) {
+  // Not answered as asked — rephrase; the data may well be stored.
 } else {
   const { rows } = result.reader_result as { columns: string[]; rows: unknown[][] };
   // rows.length === 0 means the data is absent, not that the read failed.
@@ -289,7 +292,7 @@ if (result.reader_result === null) {
 When a query bundles several independent questions, the server may decompose it
 into sub-queries and answer each one. `reader_result` is still the combined
 answer (for `"single-answer"` mode, a labelled multi-part string); `reader_results`
-holds one `TaggedReaderResult` (`{ sub_query, reader_result, error }`) per
+holds one `TaggedReaderResult` (`{ sub_query, reader_result, error, notice }`) per
 sub-query so you can read each answer unambiguously — a single-intent query
 decomposes to one entry. `reader_results` is always an array: a server without
 question decomposition omits the field on the wire and the client normalizes it
@@ -302,14 +305,16 @@ for (const part of result.reader_results) {
 }
 ```
 
-Each part's `reader_result` uses the same four answers as above, with one more
+Each part's `reader_result` uses the same five answers as above, with one more
 case: a sub-query whose SQL failed carries the empty result *and* a user-safe
 `error`, while the others are answered regardless. Its bytes then equal those
 of a sub-query that matched nothing, so read `error` before `reader_result`, as
 the loop above does. The combined `reader_result` folds the parts: rows if any
-sub-query answered; else the empty result if any executed and matched nothing;
-else `null`. In the tabular modes a read where *every* sub-query failed throws
-the 422 above instead.
+sub-query answered; else the empty result if any executed and matched nothing,
+or could not be answered as asked; else `null`. The top-level `notice` is set
+when any part could not be answered as asked, even if another part answered,
+so check it before trusting an empty part. In the tabular modes a read where
+*every* sub-query failed throws the 422 above instead.
 
 #### Scoped reads
 

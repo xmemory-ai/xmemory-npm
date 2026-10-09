@@ -293,10 +293,11 @@ export class InstanceHandle {
     // decomposition, and `related_types` unless the read asked for it, so type
     // them as optional here and normalize (always-array, `null`) for the public
     // `ReadResult` below.
-    const result = await this._requestOne<Omit<ReadResult, "reader_results" | "console_url" | "related_types"> & {
-      reader_results?: readonly TaggedReaderResult[];
+    const result = await this._requestOne<Omit<ReadResult, "reader_results" | "console_url" | "related_types" | "notice"> & {
+      reader_results?: readonly Omit<TaggedReaderResult, "notice">[];
       console_url?: string | null;
       related_types?: RelatedTypes | null;
+      notice?: string | null;
     }>("POST", `/instances/${this.id}/read`, {
       body,
       timeoutMs: options?.timeoutMs,
@@ -307,16 +308,24 @@ export class InstanceHandle {
     const readerResults = own(result, "reader_results");
     const traceId = own(result, "trace_id");
     const relatedTypes = own(result, "related_types");
+    const notice = own(result, "notice");
     // `reader_result` is required on the wire and `null` is one of its answers (a
     // refusal, in the tabular modes), so the coalescing only stands in for a field
     // the server omitted; a `null` the server sent arrives as the same `null`.
     return withConsoleUrl({
       ...result,
       reader_result: own(result, "reader_result") ?? null,
-      reader_results: Array.isArray(readerResults) ? readerResults : [],
+      // A part's `notice` is normalized the same way: the server sends it only on the part it applies to.
+      reader_results: Array.isArray(readerResults)
+        ? readerResults.map((part: Omit<TaggedReaderResult, "notice">) => {
+            const partNotice = own(part, "notice");
+            return { ...part, notice: typeof partNotice === "string" ? partNotice : null };
+          })
+        : [],
       related_types:
         relatedTypes != null && typeof relatedTypes === "object" ? (relatedTypes as RelatedTypes) : null,
       trace_id: typeof traceId === "string" ? traceId : null,
+      notice: typeof notice === "string" ? notice : null,
     });
   }
 
