@@ -250,6 +250,39 @@ did — and where a [scoped write](#scoped-writes) in `"drop"` mode reports what
 left out. A status for a write that has not finished carries none, so the field
 is optional.
 
+### Write ordering
+
+Every write to an instance goes into one queue for that instance: `write` and
+`writeAsync`, text and `WriteMutation[]` alike. Queued writes are processed in
+parallel, but applied to the instance one at a time, in the order they were
+queued (FIFO). A write is never applied ahead of an older one, even when its own
+processing finished first.
+
+- `writeAsync` resolves once the write is queued. `writeStatus` reports
+  `"queued"` until processing starts, and `"extracted"` while a processed write
+  waits for older writes to be applied.
+- `write` waits in the same queue and resolves once its own write is applied.
+  It does not jump ahead of async writes queued before it.
+- The order is the order the server receives the writes. Two writes sent at
+  the same time have no defined order between them, so when one must apply
+  after another, await the first call (`writeAsync` resolving with its
+  `write_id` is enough) before sending the second.
+- Reads are not queued: a read sees only writes that have completed.
+
+```typescript
+await inst.writeAsync("Bob joined the team as a designer.");
+await inst.writeAsync("Bob moved to the London office.");
+// Applied after both writes above, in order.
+await inst.write([
+  {
+    object_mutation: {
+      object_type: "person",
+      update: { key: { name: "Bob" }, values: { role: "lead designer" } },
+    },
+  },
+]);
+```
+
 ### `inst.read(query, options?)` → `ReadResult`
 
 Query the instance.

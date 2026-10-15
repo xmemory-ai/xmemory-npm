@@ -2,6 +2,20 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.16.1
+
+Documentation-only release: describes the order in which writes are applied. No
+API or behavior change.
+
+### Changed
+
+- The README gains a "Write ordering" section, and the `write` / `writeAsync`
+  docs say the same: every write to an instance — `write` and `writeAsync`,
+  text and `WriteMutation[]` — joins one queue. Queued writes are processed in
+  parallel but applied one at a time, in the order they were queued, so a sync
+  `write` never jumps ahead of an async write queued before it. The order is
+  the order the server receives the writes.
+
 ## 3.16.0
 
 Types the flag that marks a folded entry of a drop-mode write's skip report.
