@@ -348,6 +348,11 @@ export class InstanceHandle {
    * response carries the previous value of every field the write changed,
    * resolving a scope answers whether each named object is stored, and a
    * drop-mode report says what the skipped changes would have written.
+   *
+   * Every write joins the instance's write queue, text and mutations alike, and
+   * {@link writeAsync} writes too. Queued writes are processed in parallel but
+   * applied one at a time, in the order they were queued; this call resolves
+   * once its own write is applied, after every write queued before it.
    */
   async write(text: string, options?: WriteOptions): Promise<WriteResult>;
   async write(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<WriteResult>;
@@ -367,6 +372,12 @@ export class InstanceHandle {
    * the same `scope`. Under the default `"reject"` mode a scope violation is
    * reported by {@link writeStatus} as a failed write; under `"drop"` the write
    * completes, and what it skipped rides the completed status as `changes`.
+   *
+   * Resolves once the write is queued. Writes to an instance — sync and async,
+   * text and mutations — share one queue: they are processed in parallel but
+   * applied one at a time, in the order they were queued. The order is the
+   * order the server receives them, so await this call before sending a write
+   * that must apply after it.
    */
   async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult>;
   async writeAsync(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<AsyncWriteResult>;
