@@ -250,8 +250,27 @@ export interface AdminNamespace {
     schemaDescription: string,
     options?: GenerateSchemaOptions,
   ): Promise<GenerateSchemaResult>;
+  /**
+   * Evolve a schema not tied to an instance, on the cluster's model. To evolve
+   * an instance's schema, use `enhanceInstanceSchema`.
+   */
   enhanceSchema(
     clusterId: string,
+    schemaDescription: string,
+    currentYmlSchema: string,
+    options?: RequestOptions,
+  ): Promise<EnhanceSchemaResult>;
+  /**
+   * Evolve an instance's schema, returning the new schema and a migration plan.
+   *
+   * Pass the instance's current YAML schema plus a description of the change
+   * you want; nothing is applied. It runs on the model the instance is
+   * configured to use. The result's `migration_plan` is executor-ready: hand it
+   * to `dryRunMigration` to preview the DDL, then to `updateInstanceSchema` to
+   * apply it.
+   */
+  enhanceInstanceSchema(
+    instanceId: string,
     schemaDescription: string,
     currentYmlSchema: string,
     options?: RequestOptions,
@@ -614,6 +633,13 @@ export class XmemoryClient {
             timeoutMs: options?.timeoutMs,
           },
         );
+      },
+
+      enhanceInstanceSchema: async (instanceId, schemaDescription, currentYmlSchema, options?) => {
+        return this._requestOne<EnhanceSchemaResult>("POST", `/instances/${instanceId}/schema/enhance`, {
+          body: { schema_description: schemaDescription, current_yml_schema: currentYmlSchema },
+          timeoutMs: options?.timeoutMs,
+        });
       },
 
       dryRunMigration: async (instanceId, schemaText, schemaType, options?) => {

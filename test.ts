@@ -710,6 +710,7 @@ async function withEnv<T>(
 // ---------------------------------------------------------------------------
 
 check("admin.enhanceSchema", typeof client.admin.enhanceSchema === "function");
+check("admin.enhanceInstanceSchema", typeof client.admin.enhanceInstanceSchema === "function");
 check("admin.dryRunMigration", typeof client.admin.dryRunMigration === "function");
 check("admin.listMigrations", typeof client.admin.listMigrations === "function");
 check("admin.getMigration", typeof client.admin.getMigration === "function");
@@ -768,6 +769,51 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
   check("enhanceSchema returns migration_plan", result.migration_plan !== null);
   check("enhanceSchema op type preserved", result.migration_plan?.ops[0]?.op_type === "rename_field");
   check("enhanceSchema summary", result.summary === "rename a to b");
+  globalThis.fetch = orig;
+}
+
+// ---------------------------------------------------------------------------
+// Schema evolution — enhanceInstanceSchema posts to the instance's own route
+// ---------------------------------------------------------------------------
+
+{
+  let captured: { url: string; method: string | undefined; body: Record<string, unknown> | null } = {
+    url: "",
+    method: undefined,
+    body: null,
+  };
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch((url, init) => {
+    captured = { url, method: init?.method, body: init?.body ? JSON.parse(init.body as string) : null };
+    return {
+      status: 200,
+      body: {
+        items: [
+          {
+            data_schema: { objects: {} },
+            migration_plan: { ops: [{ op_type: "rename_field", object_name: "P", old_name: "a", new_name: "b" }] },
+            summary: "rename a to b",
+            warnings: [],
+            repair_log: [],
+          },
+        ],
+      },
+    };
+  });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const result = await c.admin.enhanceInstanceSchema("inst-1", "rename a to b", "objects:\n  P: {}");
+  check("enhanceInstanceSchema POSTs", captured.method === "POST");
+  check(
+    "enhanceInstanceSchema calls the instance's route",
+    captured.url === "http://localhost:1/instances/inst-1/schema/enhance",
+  );
+  check(
+    "enhanceInstanceSchema sends the description and the current schema",
+    JSON.stringify(captured.body) ===
+      JSON.stringify({ schema_description: "rename a to b", current_yml_schema: "objects:\n  P: {}" }),
+  );
+  check("enhanceInstanceSchema op type preserved", result.migration_plan?.ops[0]?.op_type === "rename_field");
+  check("enhanceInstanceSchema summary", result.summary === "rename a to b");
   globalThis.fetch = orig;
 }
 

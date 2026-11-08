@@ -2,6 +2,21 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.19.0
+
+Enhances an instance's schema on the instance's own route.
+
+### Added
+
+- `admin.enhanceInstanceSchema(instanceId, schemaDescription, currentYmlSchema)`
+  — evolves an instance's schema and returns the new schema and a migration
+  plan, like `enhanceSchema`, but on the model the instance is configured to
+  use. It calls `POST /instances/{instanceId}/schema/enhance`, with the same
+  body, result and `instance.generate_schema` permission as `enhanceSchema`.
+  `enhanceSchema(clusterId, …)` stays for a schema not tied to an instance, on
+  the cluster's model. The README's direct migration flow and
+  `examples/directRename.ts` now use the instance's route.
+
 ## 3.17.0
 
 Tells a read the server could not answer as asked apart from one that matched

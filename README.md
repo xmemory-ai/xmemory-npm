@@ -667,8 +667,8 @@ const xm = new XmemoryClient({ apiKey: "..." });
 const current = (await xm.admin.getInstanceSchema("<instance-id>")).data_schema;
 
 // 1. Enhance — new schema + an executor-ready migration plan.
-const enhanced = await xm.admin.enhanceSchema(
-  "<cluster-id>",
+const enhanced = await xm.admin.enhanceInstanceSchema(
+  "<instance-id>",
   "Rename Person.mail to Person.email.",
   yaml.dump(current),
 );
@@ -689,6 +689,11 @@ const info = await xm.admin.updateInstanceSchema("<instance-id>", newYaml, Schem
 });
 console.log(info.migration_id, info.prior_version, "->", info.new_version);
 ```
+
+`enhanceInstanceSchema` runs on the model the instance is configured to use. To
+enhance a schema not tied to an instance, call
+`xm.admin.enhanceSchema("<cluster-id>", description, currentYaml)`, which runs
+on the cluster's model.
 
 ### Migration history
 

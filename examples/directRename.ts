@@ -1,5 +1,5 @@
 /**
- * Direct migration flow: enhanceSchema → dryRunMigration → updateInstanceSchema.
+ * Direct migration flow: enhanceInstanceSchema → dryRunMigration → updateInstanceSchema.
  *
  * Drives a rename yourself instead of going through the suggestion engine. The
  * server emits a structured migration plan; you preview the DDL, then apply it.
@@ -10,7 +10,6 @@
  *
  *   export XMEM_API_KEY=xmem_...
  *   export XMEM_API_URL=<api-url>   # optional; defaults to https://api.xmemory.ai
- *   export XMEM_CLUSTER_ID=<cluster-id>
  *   export XMEM_INSTANCE_ID=<instance-id>
  *   npx tsx examples/directRename.ts
  */
@@ -20,9 +19,8 @@ import yaml from "js-yaml";
 import { SchemaType, XmemoryAPIError, XmemoryClient } from "../src/index.js";
 
 async function main(): Promise<void> {
-  const clusterId = process.env.XMEM_CLUSTER_ID;
   const instanceId = process.env.XMEM_INSTANCE_ID;
-  if (!clusterId || !instanceId) throw new Error("Set XMEM_CLUSTER_ID and XMEM_INSTANCE_ID");
+  if (!instanceId) throw new Error("Set XMEM_INSTANCE_ID");
 
   const xm = new XmemoryClient();
 
@@ -30,8 +28,8 @@ async function main(): Promise<void> {
   const currentYaml = yaml.dump(current);
 
   // 1. Enhance — get the new schema + an executor-ready migration plan.
-  const enhanced = await xm.admin.enhanceSchema(
-    clusterId,
+  const enhanced = await xm.admin.enhanceInstanceSchema(
+    instanceId,
     "Rename the `mail` field on the person object to `email`.",
     currentYaml,
   );
