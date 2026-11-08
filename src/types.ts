@@ -660,7 +660,7 @@ export type WriteMutation =
 // Schema evolution — migration ops (discriminated union on `op_type`)
 //
 // Field names are snake_case to match the wire format exactly, so a plan
-// returned by `enhanceSchema` can be passed straight back into
+// returned by `enhanceInstanceSchema` or `enhanceSchema` can be passed straight back into
 // `updateInstanceSchema` / `dryRunMigration` with no transformation.
 // ---------------------------------------------------------------------------
 
@@ -1109,7 +1109,7 @@ export interface PatchInstanceMetadataOptions {
 }
 
 export interface UpdateInstanceSchemaOptions {
-  /** Serialized migration plan from `enhanceSchema`; required for non-additive changes. */
+  /** Serialized migration plan from `enhanceInstanceSchema` or `enhanceSchema`; required for non-additive changes. */
   migrationPlan?: MigrationPlan | Record<string, unknown>;
   /** Authorise ops that drop data (remove object/field, lossy type cast). */
   confirmDestructive?: boolean;
