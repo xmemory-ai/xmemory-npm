@@ -9,11 +9,11 @@ Types what a field merge reports on a write.
 ### Added
 
 - `FieldMergeContradiction`, exported, and `WriteChanges.merge_contradictions`:
-  one entry per contradiction a text field's merge resolved, with
-  `object_type_name`, `identity`, `field`, `stored`, `new` and `kept`
-  (`"stored"` or `"new"`, widened with `(string & {})`). Advisory: the write
-  landed either way. Omitted when there is none, and by a server that predates
-  field merges.
+  one entry per contradiction a text field's merge reported for a field the write
+  changed, with `object_type_name`, `identity`, `field`, `stored`, `new` and
+  `kept` (`"stored"` or `"new"`, widened with `(string & {})`). Advisory: the
+  write landed either way. Omitted when there is none, and by a server that
+  predates field merges; an absent key does not prove the texts agreed.
 - The README gains "Mergeable text fields": a `str` field may declare a `merge`
   (`rules` and a required `max_length`), so a later text write merges its value
   into the stored text instead of replacing it.

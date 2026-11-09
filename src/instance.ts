@@ -353,6 +353,11 @@ export class InstanceHandle {
    * write create a scoped record that is not stored yet, and is computed by the
    * diff engine, so passing `diffEngine: false` with it is a 400.
    *
+   * A text write on a schema with a `merge` field also needs the diff engine:
+   * with the engine off, by `diffEngine: false` or by the connection's default,
+   * it is refused with a 400 `VALIDATION_ERROR`; a {@link writeAsync} one is
+   * queued and fails, which {@link writeStatus} reports.
+   *
    * A scoped write additionally requires read permission on the instance: the
    * response carries the previous value of every field the write changed,
    * resolving a scope answers whether each named object is stored, and a
@@ -406,8 +411,9 @@ export class InstanceHandle {
 
   /**
    * Poll a queued write. A finished one carries `changes` — the same report
-   * {@link write} returns inline, including what a `"drop"`-mode scope skipped;
-   * a status for a write that has not finished carries none.
+   * {@link write} returns inline, including what a `"drop"`-mode scope skipped
+   * and what a field merge chose between; a status for a write that has not
+   * finished carries none.
    */
   async writeStatus(writeId: string, options?: RequestOptions): Promise<WriteStatusResult> {
     return withConsoleUrl(

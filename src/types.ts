@@ -517,8 +517,9 @@ export interface FieldMergeContradiction {
   /** The object type of the record whose field merged. */
   readonly object_type_name: string;
   /**
-   * The record's primary key, rendered `field='value'`; empty for a record that
-   * has no key.
+   * The record's primary key, rendered `field='value'` (a composite key's parts
+   * comma-separated); empty for a record that has no key or is missing part of
+   * it.
    */
   readonly identity: string;
   /** The field that merged. */
@@ -563,9 +564,11 @@ export interface WriteChanges {
    */
   readonly skipped_out_of_scope?: readonly SkippedOutOfScope[];
   /**
-   * Advisory: the write landed either way. Omitted by the server when no merge
-   * met a contradiction, and by a server that predates field merges, so
-   * `undefined` and `[]` both mean "none".
+   * The contradictions a merge reported for a field the write changed.
+   * Advisory: the write landed either way. Omitted by the server when there is
+   * none, and by a server that predates field merges, so `undefined` and `[]`
+   * both mean "none reported" — not that the texts agreed: a merge that failed,
+   * appended, or left the stored text unchanged reports none.
    */
   readonly merge_contradictions?: readonly FieldMergeContradiction[];
 }
@@ -576,8 +579,9 @@ export interface WriteResult {
   /** Deep link to this write's trace in the console; `null` if no console is configured. */
   readonly console_url: string | null;
   /**
-   * What the write did, grouped into `created` / `updated` / `deleted`, and —
-   * for a scoped write in `"drop"` mode — what it skipped instead of applying.
+   * What the write did, grouped into `created` / `updated` / `deleted`; for a
+   * scoped write in `"drop"` mode, what it skipped instead of applying; and
+   * what a field merge chose between (`merge_contradictions`).
    */
   readonly changes: WriteChanges;
 }
@@ -601,7 +605,8 @@ export interface WriteStatusResult {
    * What the finished write did, in the same shape {@link WriteResult.changes}
    * carries — and the async caller's only view of it, since `writeAsync`
    * returns before the write has done anything. It is therefore where a
-   * `"drop"`-mode scope reports what it skipped.
+   * `"drop"`-mode scope reports what it skipped, and a field merge what it chose
+   * between.
    *
    * Optional because a status is not always about a finished write: a queued,
    * in-progress, failed or unknown `write_id` carries none. Read it once
