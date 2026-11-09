@@ -283,6 +283,48 @@ await inst.write([
 ]);
 ```
 
+### Mergeable text fields
+
+By default a write replaces a field's stored value. A `str` field can instead
+declare a `merge` in the schema, so a later text write merges its value into the
+text already stored:
+
+```yaml
+next_steps:
+  type: str
+  description: what is still to be done on the project, one step per line
+  merge:
+    rules:
+      - Keep every step that is still open.
+      - Drop a step the text says is done.
+    max_length: 400
+```
+
+- `max_length` is required; it caps the merged text.
+- With `rules`, the server merges the new value into the stored one by those
+  rules, within the cap.
+- Without `rules`, the new value is appended on its own line, leaving out lines
+  whose facts are already stated; past the cap, the text is shortened, keeping
+  every fact.
+- If a merge cannot be made, the new value is appended and nothing stored is
+  cut.
+- Only text writes merge, through the server's diff engine: a text write with
+  `diffEngine: false` on such a schema is refused, and `WriteMutation[]` writes
+  replace the value as given.
+- Adding, changing or removing a `merge` is a metadata-only schema change.
+
+Where the new value contradicted the stored one, `changes.merge_contradictions`
+says what each said and which one the merge kept (`FieldMergeContradiction`):
+
+```typescript
+const result = await inst.write("The Harbour Wall survey moved to 10 March.");
+for (const c of result.changes.merge_contradictions ?? []) {
+  console.log(c.object_type_name, c.identity, c.field, c.stored, "->", c.new, "kept:", c.kept);
+}
+```
+
+The key is omitted when there was no contradiction.
+
 ### `inst.read(query, options?)` → `ReadResult`
 
 Query the instance.

@@ -14,6 +14,7 @@ import {
   xmemoryInstance,
   SchemaType,
   type SkippedOutOfScope,
+  type FieldMergeContradiction,
   type WriteMutation,
 } from "./src/index.js";
 import { CLIENT_HEADER, buildClientIdentity, withClientHeader } from "./src/client.js";
@@ -1617,6 +1618,75 @@ async function captureRequest(
   check("scope with structured mutations throws", structuredThrew);
 
   globalThis.fetch = origFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Test: what a field merge reports — changes.merge_contradictions, on both paths
+// ---------------------------------------------------------------------------
+
+{
+  const contradictions = [
+    {
+      object_type_name: "Project",
+      identity: "name='Harbour Wall'",
+      field: "next_steps",
+      stored: "The survey is due on 3 March.",
+      new: "The survey moved to 10 March.",
+      kept: "new",
+    },
+  ];
+  const changes = { created: [], updated: [{ object_type: "Project" }], deleted: [], merge_contradictions: contradictions };
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url) => {
+    if (url.endsWith("/write_status")) {
+      return {
+        status: 200,
+        body: {
+          items: [
+            { write_id: "w1", write_status: "completed", error_detail: null, completed_at: "2026-11-09T10:00:00Z", changes },
+          ],
+        },
+      };
+    }
+    return { status: 200, body: { items: [{ write_id: "w1", trace_id: "t1", changes }] } };
+  });
+
+  const inst = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("inst-1");
+  const [entry] = (await inst.write("The Harbour Wall survey moved to 10 March.")).changes.merge_contradictions ?? [];
+  check(
+    "merge: a contradiction names the record, the field, what each side said and which one was kept",
+    entry?.object_type_name === "Project" &&
+      entry.identity === "name='Harbour Wall'" &&
+      entry.field === "next_steps" &&
+      entry.stored === "The survey is due on 3 March." &&
+      entry.new === "The survey moved to 10 March." &&
+      entry.kept === "new",
+  );
+  const status = await inst.writeStatus("w1");
+  check("merge: a completed status carries the same report", status.changes?.merge_contradictions?.[0].kept === "new");
+
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ write_id: "w2", trace_id: "t2", changes: { created: [], updated: [], deleted: [] } }] },
+  }));
+  const plain = await inst.write("Bob is an engineer.");
+  check("merge: no contradiction list when the server omits it", plain.changes.merge_contradictions === undefined);
+
+  globalThis.fetch = origFetch;
+}
+
+{
+  // The widened `kept`, pinned like `operation`: a value a later server names has to stay typed.
+  const later: FieldMergeContradiction = {
+    object_type_name: "Project",
+    identity: "",
+    field: "notes",
+    stored: "",
+    new: "",
+    kept: "both",
+  };
+  check("a kept value this release has not heard of is still typed", later.kept === "both");
 }
 
 // ---------------------------------------------------------------------------
