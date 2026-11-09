@@ -506,14 +506,48 @@ export interface SkippedOutOfScope {
 }
 
 /**
+ * One contradiction a text field's merge resolved: what the stored value said,
+ * what the write's value said, and which of the two the merged value keeps.
+ *
+ * Only a `str` field whose schema declares a `merge` produces these. A later
+ * text write merges its value into the stored text instead of replacing it,
+ * and where the two disagreed about the same thing, the merge kept one.
+ */
+export interface FieldMergeContradiction {
+  /** The object type of the record whose field merged. */
+  readonly object_type_name: string;
+  /**
+   * The record's primary key, rendered `field='value'`; empty for a record that
+   * has no key.
+   */
+  readonly identity: string;
+  /** The field that merged. */
+  readonly field: string;
+  /** What the stored value said, as the merge quoted it, cut to 300 characters. */
+  readonly stored: string;
+  /**
+   * What the write's value said (or that of a record the write merged into
+   * this one), as the merge quoted it, cut to 300 characters.
+   */
+  readonly new: string;
+  /**
+   * Which of the two the merged value keeps. Widened with `(string & {})` like
+   * {@link SkippedOutOfScope.operation}, so a value named by a server newer
+   * than this release is still typed rather than rejected.
+   */
+  readonly kept: "stored" | "new" | (string & {});
+}
+
+/**
  * What a write did, grouped into `created` / `updated` / `deleted`, plus what a
- * `"drop"`-mode scope left out.
+ * `"drop"`-mode scope left out and the contradictions a field merge resolved.
  *
  * The three groups stay `unknown`: their shape is the server's to evolve and
  * this client has never modelled it. `skipped_out_of_scope` is typed because it
  * is the one part a caller has to branch on — a `"drop"`-mode write succeeds
  * whether or not it skipped anything, so this list is the only report that some
- * of what the text said was not applied.
+ * of what the text said was not applied. `merge_contradictions` is typed because
+ * it is the only report of what a merge chose between.
  */
 export interface WriteChanges {
   readonly created: unknown;
@@ -528,6 +562,12 @@ export interface WriteChanges {
    * {@link SkippedOutOfScope.folded}).
    */
   readonly skipped_out_of_scope?: readonly SkippedOutOfScope[];
+  /**
+   * Advisory: the write landed either way. Omitted by the server when no merge
+   * met a contradiction, and by a server that predates field merges, so
+   * `undefined` and `[]` both mean "none".
+   */
+  readonly merge_contradictions?: readonly FieldMergeContradiction[];
 }
 
 export interface WriteResult {

@@ -2,6 +2,22 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.20.0
+
+Types what a field merge reports on a write.
+
+### Added
+
+- `FieldMergeContradiction`, exported, and `WriteChanges.merge_contradictions`:
+  one entry per contradiction a text field's merge resolved, with
+  `object_type_name`, `identity`, `field`, `stored`, `new` and `kept`
+  (`"stored"` or `"new"`, widened with `(string & {})`). Advisory: the write
+  landed either way. Omitted when there is none, and by a server that predates
+  field merges.
+- The README gains "Mergeable text fields": a `str` field may declare a `merge`
+  (`rules` and a required `max_length`), so a later text write merges its value
+  into the stored text instead of replacing it.
+
 ## 3.19.0
 
 Enhances an instance's schema on the instance's own route.
