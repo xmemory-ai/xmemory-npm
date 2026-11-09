@@ -247,8 +247,8 @@ if (status.write_status === "completed") {
 
 A finished write carries `changes`, the async path's only view of what the write
 did — and where a [scoped write](#scoped-writes) in `"drop"` mode reports what it
-left out. A status for a write that has not finished carries none, so the field
-is optional.
+left out, and a [field merge](#mergeable-text-fields) what it chose between. A
+status for a write that has not finished carries none, so the field is optional.
 
 ### Write ordering
 
@@ -285,9 +285,10 @@ await inst.write([
 
 ### Mergeable text fields
 
-By default a write replaces a field's stored value. A `str` field can instead
-declare a `merge` in the schema, so a later text write merges its value into the
-text already stored:
+By default a write replaces a field's stored value. A `str` field that is not
+part of the primary key can instead declare a `merge` in the schema, so a later
+text write merges its value into the text already stored. A server from before
+field merges keeps the block but ignores it, and replaces the value as before:
 
 ```yaml
 next_steps:
@@ -300,21 +301,27 @@ next_steps:
     max_length: 400
 ```
 
-- `max_length` is required; it caps the merged text.
+- `max_length` is required, a whole number from 1 to 20,000: the length the
+  merge keeps the text within. `rules` is optional: up to 50 non-empty lines of
+  at most 1,000 characters each. `merge` takes no other key, and a schema that
+  breaks any of this is refused.
 - With `rules`, the server merges the new value into the stored one by those
   rules, within the cap.
 - Without `rules`, the new value is appended on its own line, leaving out lines
   whose facts are already stated; past the cap, the text is shortened, keeping
   every fact.
-- If a merge cannot be made, the new value is appended and nothing stored is
-  cut.
-- Only text writes merge, through the server's diff engine: a text write with
-  `diffEngine: false` on such a schema is refused, and `WriteMutation[]` writes
-  replace the value as given.
+- If a merge cannot be made, the new value is appended, even past the cap, and
+  nothing stored is cut.
+- Only text writes merge, through the server's diff engine. A text write that
+  runs without it on such a schema — `diffEngine: false`, or a connection whose
+  default is off — is refused with a 400 `VALIDATION_ERROR`; through
+  `writeAsync` it is queued and fails, which `writeStatus` reports.
+  `WriteMutation[]` writes replace the value as given.
 - Adding, changing or removing a `merge` is a metadata-only schema change.
 
-Where the new value contradicted the stored one, `changes.merge_contradictions`
-says what each said and which one the merge kept (`FieldMergeContradiction`):
+Where a merge that changed the field found the new value contradicting the
+stored one, `changes.merge_contradictions` says what each said and which one it
+kept (`FieldMergeContradiction`):
 
 ```typescript
 const result = await inst.write("The Harbour Wall survey moved to 10 March.");
@@ -323,7 +330,9 @@ for (const c of result.changes.merge_contradictions ?? []) {
 }
 ```
 
-The key is omitted when there was no contradiction.
+The key is omitted when there is no such entry. An absent key does not prove the
+texts agreed: a merge that failed, fell back to appending, or left the stored
+text unchanged reports none.
 
 ### `inst.read(query, options?)` → `ReadResult`
 
