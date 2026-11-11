@@ -15,6 +15,7 @@ import {
   SchemaType,
   type SkippedOutOfScope,
   type FieldMergeContradiction,
+  type OrphanedRecord,
   type WriteMutation,
 } from "./src/index.js";
 import { CLIENT_HEADER, buildClientIdentity, withClientHeader } from "./src/client.js";
@@ -1687,6 +1688,53 @@ async function captureRequest(
     kept: "both",
   };
   check("a kept value this release has not heard of is still typed", later.kept === "both");
+}
+
+// ---------------------------------------------------------------------------
+// Test: what a delete reports — changes.orphaned_records, on both paths
+// ---------------------------------------------------------------------------
+
+{
+  const orphaned: OrphanedRecord[] = [
+    { object_type_name: "Task", identity: "title='Survey'", relation: "belongs_to" },
+    { object_type_name: "Task", identity: "", relation: "belongs_to", count: 7, folded: true },
+  ];
+  const changes = { created: [], updated: [], deleted: { objects: [], relations: [] }, orphaned_records: orphaned };
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url) => {
+    if (url.endsWith("/write_status")) {
+      return {
+        status: 200,
+        body: {
+          items: [
+            { write_id: "w1", write_status: "completed", error_detail: null, completed_at: "2026-11-11T10:00:00Z", changes },
+          ],
+        },
+      };
+    }
+    return { status: 200, body: { items: [{ write_id: "w1", trace_id: "t1", changes }] } };
+  });
+
+  const inst = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("inst-1");
+  const [named, folded] = (await inst.write("Remove the Harbour Wall project.")).changes.orphaned_records ?? [];
+  check(
+    "orphaned: an entry names the record and the relation it has no link of left",
+    named?.object_type_name === "Task" && named.identity === "title='Survey'" && named.relation === "belongs_to",
+  );
+  check("orphaned: only a folded entry carries folded and a count", named?.folded === undefined && named.count === undefined);
+  check("orphaned: a folded entry stands for its count", folded?.folded === true && folded.count === 7 && folded.identity === "");
+  const status = await inst.writeStatus("w1");
+  check("orphaned: a completed status carries the same report", status.changes?.orphaned_records?.length === 2);
+
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ write_id: "w2", trace_id: "t2", changes: { created: [], updated: [], deleted: [] } }] },
+  }));
+  const plain = await inst.write("Bob is an engineer.");
+  check("orphaned: no list when the server omits it", plain.changes.orphaned_records === undefined);
+
+  globalThis.fetch = origFetch;
 }
 
 // ---------------------------------------------------------------------------
