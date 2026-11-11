@@ -9,8 +9,8 @@ Types the records a delete leaves without a link.
 ### Added
 
 - `OrphanedRecord`, exported, and `WriteChanges.orphaned_records`: one entry per
-  stored record a delete in the write left with no link of a relation it had one
-  of, with `object_type_name`, `identity` and `relation`. Advisory: delete or
+  stored record and relation a delete in the write left with no link of, with
+  `object_type_name`, `identity` and `relation`. Advisory: delete or
   relink such a record if it no longer belongs. Past 100 entries of one type and
   relation, the rest arrive as one entry marked `folded`, with an empty
   `identity` and their `count`. Omitted when there is none, and by a server that

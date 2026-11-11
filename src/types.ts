@@ -588,8 +588,10 @@ export interface WriteChanges {
   /**
    * What the write deleted, as `{ objects, relations }`. A record delete's
    * links, removed or cleared as the relation's `on_delete` says, are listed
-   * under `relations`. Past 100 links of one relation, the rest arrive as one
-   * entry marked `folded: true`, with no endpoints and their `count`.
+   * under `relations`; a link the same write also wrote is reported under
+   * `relationship_outcomes` instead. Past 100 links of one relation, the rest
+   * arrive as one entry with that relation's `name`, empty `endpoints` and
+   * `fields`, `folded: true` and their `count`.
    */
   readonly deleted: unknown;
   /**
@@ -614,9 +616,9 @@ export interface WriteChanges {
    * they had one of. Advisory: delete or relink such a record if it no longer
    * belongs. A record the write deleted or linked again is not listed. Omitted
    * by the server when there is none, and by a server that predates the
-   * report, so `undefined` and `[]` both mean "none". Past 100 entries of one
-   * type and relation, the rest arrive folded into one entry (see
-   * {@link OrphanedRecord.folded}).
+   * report, so `undefined` and `[]` both mean "none reported". Past 100
+   * entries of one type and relation, the rest arrive folded into one entry
+   * (see {@link OrphanedRecord.folded}).
    */
   readonly orphaned_records?: readonly OrphanedRecord[];
 }
