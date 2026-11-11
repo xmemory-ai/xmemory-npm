@@ -622,9 +622,10 @@ export interface WriteChanges {
    * belongs. A record the write deleted, or that still has a link of that
    * relation when the write completes, is not listed. Omitted by the server
    * when there is none, and by a server that predates the report, so
-   * `undefined` and `[]` both mean "none reported". Past 100 entries of one
-   * type and relation, the rest arrive folded into one entry (see
-   * {@link OrphanedRecord.folded}).
+   * `undefined` and `[]` both mean "none reported" — and nothing at all when
+   * `relationship_outcomes` reports the write's summary unavailable (an entry
+   * with `status: "unavailable"`). Past 100 entries of one type and relation,
+   * the rest arrive folded into one entry (see {@link OrphanedRecord.folded}).
    */
   readonly orphaned_records?: readonly OrphanedRecord[];
 }

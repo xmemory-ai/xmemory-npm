@@ -14,7 +14,8 @@ Types the records a delete leaves without a link.
   relink such a record if it no longer belongs. Past 100 entries of one type and
   relation, the rest arrive as one entry marked `folded`, with an empty
   `identity` and their `count`. Omitted when there is none, and by a server that
-  predates the report.
+  predates the report; a missing key proves nothing when `relationship_outcomes`
+  reports the write's summary unavailable.
 - `WriteChanges.deleted` says that a record delete's links are listed under
   `deleted.relations`, folded the same way past 100 of one relation, and the
   README gains "Records a delete left without a link".
