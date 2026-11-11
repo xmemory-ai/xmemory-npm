@@ -76,6 +76,7 @@ export type {
   WriteChanges,
   SkippedOutOfScope,
   FieldMergeContradiction,
+  OrphanedRecord,
   AsyncWriteResult,
   WriteStatusResult,
   ExtractResult,

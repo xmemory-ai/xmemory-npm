@@ -540,19 +540,57 @@ export interface FieldMergeContradiction {
 }
 
 /**
+ * A stored record a delete in the write left with no link of a relation it had
+ * one of: the deleted record was its last link of that relation.
+ *
+ * Deleting a record never deletes the records linked to it. Its links are
+ * removed or cleared, as the relation's `on_delete` says, and listed under
+ * `deleted.relations`. A record left without any link of a relation is listed
+ * here, so the caller can decide whether it still belongs.
+ */
+export interface OrphanedRecord {
+  /** The object type of the record left without a link. */
+  readonly object_type_name: string;
+  /**
+   * The record as the write's other entries name it: by the write's own
+   * identifier when the write names it, otherwise by its primary key, rendered
+   * `field='value'` (a composite key's parts comma-separated). Empty for a type
+   * without a key, for a key missing a part, and on a folded entry.
+   */
+  readonly identity: string;
+  /** The relation the record no longer has a link of. */
+  readonly relation: string;
+  /** On a folded entry, how many records it stands for. */
+  readonly count?: number;
+  /**
+   * `true` on an entry that stands for the records past the first 100 of one
+   * type and relation, with an empty `identity` and their `count`.
+   */
+  readonly folded?: boolean;
+}
+
+/**
  * What a write did, grouped into `created` / `updated` / `deleted`, plus what a
- * `"drop"`-mode scope left out and the contradictions a field merge resolved.
+ * `"drop"`-mode scope left out, the contradictions a field merge resolved and
+ * the records a delete left without a link.
  *
  * The three groups stay `unknown`: their shape is the server's to evolve and
  * this client has never modelled it. `skipped_out_of_scope` is typed because it
  * is the one part a caller has to branch on — a `"drop"`-mode write succeeds
  * whether or not it skipped anything, so this list is the only report that some
  * of what the text said was not applied. `merge_contradictions` is typed because
- * it is the only report of what a merge chose between.
+ * it is the only report of what a merge chose between, and `orphaned_records`
+ * because it is the only report of a record a delete left without a link.
  */
 export interface WriteChanges {
   readonly created: unknown;
   readonly updated: unknown;
+  /**
+   * What the write deleted, as `{ objects, relations }`. A record delete's
+   * links, removed or cleared as the relation's `on_delete` says, are listed
+   * under `relations`. Past 100 links of one relation, the rest arrive as one
+   * entry marked `folded: true`, with no endpoints and their `count`.
+   */
   readonly deleted: unknown;
   /**
    * Omitted by the server when nothing was skipped — which is every write that
@@ -571,6 +609,16 @@ export interface WriteChanges {
    * appended, or left the stored text unchanged reports none.
    */
   readonly merge_contradictions?: readonly FieldMergeContradiction[];
+  /**
+   * The stored records a delete in this write left with no link of a relation
+   * they had one of. Advisory: delete or relink such a record if it no longer
+   * belongs. A record the write deleted or linked again is not listed. Omitted
+   * by the server when there is none, and by a server that predates the
+   * report, so `undefined` and `[]` both mean "none". Past 100 entries of one
+   * type and relation, the rest arrive folded into one entry (see
+   * {@link OrphanedRecord.folded}).
+   */
+  readonly orphaned_records?: readonly OrphanedRecord[];
 }
 
 export interface WriteResult {
@@ -580,8 +628,9 @@ export interface WriteResult {
   readonly console_url: string | null;
   /**
    * What the write did, grouped into `created` / `updated` / `deleted`; for a
-   * scoped write in `"drop"` mode, what it skipped instead of applying; and
-   * what a field merge chose between (`merge_contradictions`).
+   * scoped write in `"drop"` mode, what it skipped instead of applying; what a
+   * field merge chose between (`merge_contradictions`); and the records a delete
+   * left without a link (`orphaned_records`).
    */
   readonly changes: WriteChanges;
 }
@@ -605,8 +654,8 @@ export interface WriteStatusResult {
    * What the finished write did, in the same shape {@link WriteResult.changes}
    * carries — and the async caller's only view of it, since `writeAsync`
    * returns before the write has done anything. It is therefore where a
-   * `"drop"`-mode scope reports what it skipped, and a field merge what it chose
-   * between.
+   * `"drop"`-mode scope reports what it skipped, a field merge what it chose
+   * between, and a delete the records it left without a link.
    *
    * Optional because a status is not always about a finished write: a queued,
    * in-progress, failed or unknown `write_id` carries none. Read it once

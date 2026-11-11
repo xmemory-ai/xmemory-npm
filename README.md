@@ -247,8 +247,9 @@ if (status.write_status === "completed") {
 
 A finished write carries `changes`, the async path's only view of what the write
 did — and where a [scoped write](#scoped-writes) in `"drop"` mode reports what it
-left out, and a [field merge](#mergeable-text-fields) what it chose between. A
-status for a write that has not finished carries none, so the field is optional.
+left out, a [field merge](#mergeable-text-fields) what it chose between, and a
+[delete](#records-a-delete-left-without-a-link) the records it left without a link.
+A status for a write that has not finished carries none, so the field is optional.
 
 ### Write ordering
 
@@ -333,6 +334,27 @@ for (const c of result.changes.merge_contradictions ?? []) {
 The key is omitted when there is no such entry. An absent key does not prove the
 texts agreed: a merge that failed, fell back to appending, or left the stored
 text unchanged reports none.
+
+### Records a delete left without a link
+
+Deleting a record never deletes the records linked to it. The relation's
+`on_delete` removes or clears each link, and the write lists those links under
+`changes.deleted.relations`. A record whose last link of a relation was the
+deleted one is listed in `changes.orphaned_records` (`OrphanedRecord`), so you
+can decide whether it still belongs:
+
+```typescript
+const result = await inst.write("Remove the Harbour Wall project.");
+for (const r of result.changes.orphaned_records ?? []) {
+  console.log(r.object_type_name, r.identity, "has no", r.relation, "link left");
+}
+```
+
+The key is omitted when there is no such record, and by a server from before
+this report. A record the write deleted or linked again is not listed. Past 100
+entries of one type and relation, the rest arrive as one entry marked
+`folded: true`, with an empty `identity` and their `count`; `deleted.relations`
+folds a delete's links past 100 of one relation the same way.
 
 ### `inst.read(query, options?)` → `ReadResult`
 
