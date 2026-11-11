@@ -339,22 +339,25 @@ text unchanged reports none.
 
 Deleting a record never deletes the records linked to it. The relation's
 `on_delete` removes or clears each link, and the write lists those links under
-`changes.deleted.relations`. A record whose last link of a relation was the
+`changes.deleted.relations`; a link the same write also wrote is reported under
+`relationship_outcomes` instead. A record whose last link of a relation was the
 deleted one is listed in `changes.orphaned_records` (`OrphanedRecord`), so you
 can decide whether it still belongs:
 
 ```typescript
 const result = await inst.write("Remove the Harbour Wall project.");
 for (const r of result.changes.orphaned_records ?? []) {
-  console.log(r.object_type_name, r.identity, "has no", r.relation, "link left");
+  console.log(r.object_type_name, r.folded ? `${r.count} more` : r.identity, "has no", r.relation, "link left");
 }
 ```
 
-The key is omitted when there is no such record, and by a server from before
-this report. A record the write deleted or linked again is not listed. Past 100
-entries of one type and relation, the rest arrive as one entry marked
-`folded: true`, with an empty `identity` and their `count`; `deleted.relations`
-folds a delete's links past 100 of one relation the same way.
+The key is omitted when there is no such record and by a server from before
+this report, so a missing key means none reported. A record the write deleted
+or linked again is not listed. Past 100 entries of one type and relation, the
+rest arrive as one entry marked `folded: true`, with an empty `identity` and
+their `count`. `deleted.relations` folds a delete's links past 100 of one
+relation into one entry with that relation's `name`, empty `endpoints` and
+`fields`, `folded: true` and their `count`.
 
 ### `inst.read(query, options?)` → `ReadResult`
 
