@@ -558,7 +558,10 @@ export interface OrphanedRecord {
    * without a key, for a key missing a part, and on a folded entry.
    */
   readonly identity: string;
-  /** The relation the record no longer has a link of. */
+  /**
+   * The relation the record no longer has a link of, by its class name: an XMD
+   * relation `works_at` comes back as `WorksAt`.
+   */
   readonly relation: string;
   /** On a folded entry, how many records it stands for. */
   readonly count?: number;
@@ -588,10 +591,10 @@ export interface WriteChanges {
   /**
    * What the write deleted, as `{ objects, relations }`. A record delete's
    * links, removed or cleared as the relation's `on_delete` says, are listed
-   * under `relations`; a link the same write also wrote is reported under
-   * `relationship_outcomes` instead. Past 100 links of one relation, the rest
-   * arrive as one entry with that relation's `name`, empty `endpoints` and
-   * `fields`, `folded: true` and their `count`.
+   * under `relations`; a link the same write also states may be reported
+   * under `relationship_outcomes` as well, or instead. Past 100 links of one
+   * relation, the rest arrive as one entry with that relation's `name`, empty
+   * `endpoints` and `fields`, `folded: true` and their `count`.
    */
   readonly deleted: unknown;
   /**

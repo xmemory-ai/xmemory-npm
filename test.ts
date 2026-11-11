@@ -1696,8 +1696,8 @@ async function captureRequest(
 
 {
   const orphaned: OrphanedRecord[] = [
-    { object_type_name: "Task", identity: "title='Survey'", relation: "belongs_to" },
-    { object_type_name: "Task", identity: "", relation: "belongs_to", count: 7, folded: true },
+    { object_type_name: "Task", identity: "title='Survey'", relation: "BelongsTo" },
+    { object_type_name: "Task", identity: "", relation: "BelongsTo", count: 7, folded: true },
   ];
   const changes = { created: [], updated: [], deleted: { objects: [], relations: [] }, orphaned_records: orphaned };
 
@@ -1720,7 +1720,7 @@ async function captureRequest(
   const [named, folded] = (await inst.write("Remove the Harbour Wall project.")).changes.orphaned_records ?? [];
   check(
     "orphaned: an entry names the record and the relation it has no link of left",
-    named?.object_type_name === "Task" && named.identity === "title='Survey'" && named.relation === "belongs_to",
+    named?.object_type_name === "Task" && named.identity === "title='Survey'" && named.relation === "BelongsTo",
   );
   check("orphaned: only a folded entry carries folded and a count", named?.folded === undefined && named.count === undefined);
   check("orphaned: a folded entry stands for its count", folded?.folded === true && folded.count === 7 && folded.identity === "");

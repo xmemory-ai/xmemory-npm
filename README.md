@@ -339,10 +339,11 @@ text unchanged reports none.
 
 Deleting a record never deletes the records linked to it. The relation's
 `on_delete` removes or clears each link, and the write lists those links under
-`changes.deleted.relations`; a link the same write also wrote is reported under
-`relationship_outcomes` instead. A record whose last link of a relation was the
-deleted one is listed in `changes.orphaned_records` (`OrphanedRecord`), so you
-can decide whether it still belongs:
+`changes.deleted.relations`; a link the same write also states may be reported
+under `relationship_outcomes` as well, or instead. A record whose last link of a
+relation was the deleted one is listed in `changes.orphaned_records`
+(`OrphanedRecord`), so you can decide whether it still belongs. `relation` is
+the relation's class name: an XMD relation `works_at` comes back as `WorksAt`:
 
 ```typescript
 const result = await inst.write("Remove the Harbour Wall project.");
