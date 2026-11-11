@@ -352,14 +352,15 @@ for (const r of result.changes.orphaned_records ?? []) {
 }
 ```
 
-The key is omitted when there is no such record and by a server from before
-this report, so a missing key means none reported. A record the write deleted,
-or that still has a link of that relation when the write completes, is not
-listed. Past 100 entries of one type and relation, the rest arrive as one entry
-marked `folded: true`, with an empty `identity` and their `count`.
-`deleted.relations` folds a delete's links past 100 of one relation into one
-entry with that relation's `name`, empty `endpoints` and `fields`,
-`folded: true` and their `count`.
+The key is omitted when there is no such record and by a server from before this
+report, so a missing key means none reported. It means nothing at all when
+`relationship_outcomes` reports the write's summary unavailable (an entry with
+`status: "unavailable"`). A record the write deleted, or that still has a link
+of that relation when the write completes, is not listed. Past 100 entries of
+one type and relation, the rest arrive as one entry marked `folded: true`, with
+an empty `identity` and their `count`. `deleted.relations` folds a delete's
+links past 100 of one relation into one entry with that relation's `name`, empty
+`endpoints` and `fields`, `folded: true` and their `count`.
 
 ### `inst.read(query, options?)` → `ReadResult`
 
