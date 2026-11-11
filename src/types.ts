@@ -545,8 +545,10 @@ export interface FieldMergeContradiction {
  *
  * Deleting a record never deletes the records linked to it. Its links are
  * removed or cleared, as the relation's `on_delete` says, and listed under
- * `deleted.relations`. A record left without any link of a relation is listed
- * here, so the caller can decide whether it still belongs.
+ * `deleted.relations`; a link the same write also states may be reported under
+ * `relationship_outcomes` as well, or instead. A record left without any link
+ * of a relation is listed here, so the caller can decide whether it still
+ * belongs.
  */
 export interface OrphanedRecord {
   /** The object type of the record left without a link. */
@@ -617,11 +619,12 @@ export interface WriteChanges {
   /**
    * The stored records a delete in this write left with no link of a relation
    * they had one of. Advisory: delete or relink such a record if it no longer
-   * belongs. A record the write deleted or linked again is not listed. Omitted
-   * by the server when there is none, and by a server that predates the
-   * report, so `undefined` and `[]` both mean "none reported". Past 100
-   * entries of one type and relation, the rest arrive folded into one entry
-   * (see {@link OrphanedRecord.folded}).
+   * belongs. A record the write deleted, or that still has a link of that
+   * relation when the write completes, is not listed. Omitted by the server
+   * when there is none, and by a server that predates the report, so
+   * `undefined` and `[]` both mean "none reported". Past 100 entries of one
+   * type and relation, the rest arrive folded into one entry (see
+   * {@link OrphanedRecord.folded}).
    */
   readonly orphaned_records?: readonly OrphanedRecord[];
 }

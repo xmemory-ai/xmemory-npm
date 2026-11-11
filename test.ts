@@ -933,7 +933,10 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
     { item_fingerprint: "fp1", decision: "accept" },
   ]);
   check("decideSuggestions next_proposal_version", decided.next_proposal_version === "v2");
-  check("decideSuggestions sends proposal_version", (body ?? {}).proposal_version === "v1");
+  check(
+    "decideSuggestions sends proposal_version",
+    ((body ?? {}) as { proposal_version?: string }).proposal_version === "v1",
+  );
   globalThis.fetch = orig;
 }
 
@@ -1722,10 +1725,15 @@ async function captureRequest(
     "orphaned: an entry names the record and the relation it has no link of left",
     named?.object_type_name === "Task" && named.identity === "title='Survey'" && named.relation === "BelongsTo",
   );
-  check("orphaned: only a folded entry carries folded and a count", named?.folded === undefined && named.count === undefined);
+  check("orphaned: only a folded entry carries folded and a count", named?.folded === undefined && named?.count === undefined);
   check("orphaned: a folded entry stands for its count", folded?.folded === true && folded.count === 7 && folded.identity === "");
   const status = await inst.writeStatus("w1");
-  check("orphaned: a completed status carries the same report", status.changes?.orphaned_records?.length === 2);
+  const statusReport = status.changes?.orphaned_records ?? [];
+  const statusFolded = statusReport[1];
+  check(
+    "orphaned: a completed status carries the same report",
+    statusReport.length === 2 && statusFolded?.folded === true && statusFolded.count === 7 && statusFolded.identity === "",
+  );
 
   globalThis.fetch = mockFetch(() => ({
     status: 200,
@@ -1964,8 +1972,7 @@ async function captureRequest(
 {
   // The flag is optional: an entry from a server that predates the cap, without
   // it, is a SkippedOutOfScope, and so is a folded one. `npm test` type-checks
-  // src/ only, so these lines are checked as types by `tsc --strict test.ts`, not
-  // by the test run.
+  // this file too (`tsconfig.test.json`), so these lines are checked as types.
   const before: SkippedOutOfScope = { operation: "update", object_type_name: "Person", identity: "", fields: ["city"], count: 1 };
   const folded: SkippedOutOfScope = { ...before, fields: [], count: 40, folded: true };
   check("folded: optional in the type", before.folded === undefined && folded.folded === true);
@@ -2335,9 +2342,9 @@ function checkClientHeader(label: string, identity: string | undefined): void {
     "a catalog entry carries its distance and, below the last level, its own edges",
     res.related_types?.depth === 2 &&
       res.related_types?.objects["course"].distance === 0 &&
-      res.related_types?.objects["university"].related[0].object_type === "event" &&
+      res.related_types?.objects["university"].related?.[0]?.object_type === "event" &&
       res.related_types?.objects["event"].distance === 2 &&
-      res.related_types?.objects["event"].related.length === 0,
+      res.related_types?.objects["event"].related?.length === 0,
   );
 
   globalThis.fetch = origFetch;
