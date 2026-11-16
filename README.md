@@ -996,7 +996,7 @@ new file mode 100644
 +  id: 'xmemory',
 +  servers: {
 +    xmemory: {
-+      url: new URL('https://dk-mcp.xmemory.ai'),
++      url: new URL('https://mcp.xmemory.ai'),
 +      requestInit: {
 +        headers: {
 +          Authorization: `Bearer ${process.env.XMEM_MCP_BEARER_TOKEN}`,
