@@ -5,13 +5,17 @@ All notable changes to the `xmemory` npm package are documented here.
 ## 3.21.1
 
 Documentation-only release: names the permission related types need as the
-server now calls it. No API or behavior change.
+server now calls it, and points the Mastra example at the public MCP endpoint.
+No API or behavior change.
 
 ### Changed
 
 - The permission a read with `includeRelatedTypes: "types"` needs is named
   `instance.get`, as the server now calls it (it was `instance.get_own`), in the
   README and in the `ReadOptions` and `RelatedTypesMode` docs.
+
+- The README's Mastra example connects to the public MCP endpoint,
+  `https://mcp.xmemory.ai`.
 
 ## 3.21.0
 

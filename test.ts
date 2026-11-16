@@ -2428,7 +2428,8 @@ function checkClientHeader(label: string, identity: string | undefined): void {
     check("a read refused for related types throws XmemoryAPIError", e instanceof XmemoryAPIError);
     check("a read refused for related types is a 403", err.status === 403);
     check("a read refused for related types carries FORBIDDEN", err.code === "FORBIDDEN");
-    check("a read refused for related types names the permission", err.message.includes("instance.get"));
+    check("a read refused for related types names the permission", /\binstance\.get\b(?!_)/.test(err.message));
+    check("a read refused for related types does not use the old permission name", !err.message.includes("instance.get_own"));
   }
 
   globalThis.fetch = origFetch;

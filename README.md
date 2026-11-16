@@ -882,7 +882,7 @@ different things:
 | 402  | `QUOTA_EXCEEDED`  | Tenant exhausted its plan/usage allowance (a daily or monthly token quota). | **No.** Wait for the window to reset. |
 | 429  | `RATE_LIMITED`    | Genuine velocity / rate limit.                       | **Yes**, with backoff.             |
 | 422  | `INVALID_INPUT`   | A read that answered nothing: in `"raw-tables"` / `"xresponse"` mode every sub-query's SQL failed, or the model provider declined the input. See [What comes back](#what-comes-back). | **No.** Same input, same answer. |
-| 403  | `FORBIDDEN`       | The API key lacks a permission the call needs — for a read with `includeRelatedTypes: "types"`, `instance.get`; the message names it. See [Related types](#related-types). | **No.** Repeat without the option, or use a key that holds it. |
+| 403  | `FORBIDDEN`       | The API key lacks a permission the call needs — for a read with `includeRelatedTypes: "types"`, `instance.get` (servers from before the permission rename call it `instance.get_own`); the message names it. See [Related types](#related-types). | **No.** Repeat without the option, or use a key that holds it. |
 
 For `QUOTA_EXCEEDED`, `details` carries `kind`
 (`"daily_quota_exceeded"` | `"monthly_quota_exceeded"`) and
