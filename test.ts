@@ -2411,7 +2411,8 @@ function checkClientHeader(label: string, identity: string | undefined): void {
         {
           code: "FORBIDDEN",
           message:
-            "Related types need the instance.get_own permission, which this API key does not have. " +
+            "Related types need the instance.get permission for this instance, the same access the schema endpoint needs, " +
+            "which this caller does not have. " +
             'Repeat the read without include_related_types (or with "none") to get the answer alone.',
         },
       ],
@@ -2427,7 +2428,7 @@ function checkClientHeader(label: string, identity: string | undefined): void {
     check("a read refused for related types throws XmemoryAPIError", e instanceof XmemoryAPIError);
     check("a read refused for related types is a 403", err.status === 403);
     check("a read refused for related types carries FORBIDDEN", err.code === "FORBIDDEN");
-    check("a read refused for related types names the permission", err.message.includes("instance.get_own"));
+    check("a read refused for related types names the permission", err.message.includes("instance.get"));
   }
 
   globalThis.fetch = origFetch;

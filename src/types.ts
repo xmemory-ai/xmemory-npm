@@ -15,7 +15,7 @@ export type ReadMode = "single-answer" | "raw-tables" | "xresponse";
 /**
  * What a read says about the schema around its answer. `"types"` adds
  * {@link ReadResult.related_types} to the result; `"none"` (the server default)
- * leaves it out. Asking for it needs the `instance.get_own` permission on the
+ * leaves it out. Asking for it needs the `instance.get` permission on the
  * API key, the same one the schema endpoints need, on top of `data.read`: a key
  * without it gets a 403 whose message names the permission, and the plain read
  * is unaffected.
@@ -1105,7 +1105,7 @@ export interface ReadOptions {
    * `"types"` asks for {@link ReadResult.related_types}: the object types the read
    * touched, the fields it did not return, and the object types a declared
    * relation links them to. Left unset, nothing is sent and the server default
-   * (`"none"`) applies. Needs `instance.get_own` on the API key; see
+   * (`"none"`) applies. Needs `instance.get` on the API key; see
    * {@link RelatedTypesMode}.
    */
   includeRelatedTypes?: RelatedTypesMode;
