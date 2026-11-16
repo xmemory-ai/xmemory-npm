@@ -512,7 +512,7 @@ level in the shape it always had: `depth`, `omitted_objects` and the catalog
 entries' `distance`, `related` and `omitted_related` are then absent. A value
 outside 1 to 3 is a 422 whose `code` is `VALIDATION_ERROR`. Asking for related
 types needs the
-`instance.get_own` permission on the API key, the same one the schema
+`instance.get` permission on the API key, the same one the schema
 endpoints need, on top of `data.read`: a key without it gets a 403 whose
 message names the permission, and the plain read is unaffected.
 
@@ -882,7 +882,7 @@ different things:
 | 402  | `QUOTA_EXCEEDED`  | Tenant exhausted its plan/usage allowance (a daily or monthly token quota). | **No.** Wait for the window to reset. |
 | 429  | `RATE_LIMITED`    | Genuine velocity / rate limit.                       | **Yes**, with backoff.             |
 | 422  | `INVALID_INPUT`   | A read that answered nothing: in `"raw-tables"` / `"xresponse"` mode every sub-query's SQL failed, or the model provider declined the input. See [What comes back](#what-comes-back). | **No.** Same input, same answer. |
-| 403  | `FORBIDDEN`       | The API key lacks a permission the call needs — for a read with `includeRelatedTypes: "types"`, `instance.get_own`; the message names it. See [Related types](#related-types). | **No.** Repeat without the option, or use a key that holds it. |
+| 403  | `FORBIDDEN`       | The API key lacks a permission the call needs — for a read with `includeRelatedTypes: "types"`, `instance.get`; the message names it. See [Related types](#related-types). | **No.** Repeat without the option, or use a key that holds it. |
 
 For `QUOTA_EXCEEDED`, `details` carries `kind`
 (`"daily_quota_exceeded"` | `"monthly_quota_exceeded"`) and
