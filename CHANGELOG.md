@@ -198,8 +198,7 @@ Two `"drop"`-only rules come from the server. It creates a record whose primary
 key the scope names even if that record is not stored yet — which is what makes
 "create or update exactly this record" expressible, where `"reject"` requires
 every scoped record to exist already — and it never creates a record of a type
-that declares no user-defined primary key, because a scope cannot name one. It
-is computed by the diff engine, so `diffEngine: false` alongside it is a 400.
+that declares no user-defined primary key, because a scope cannot name one.
 
 ## 3.13.0
 
@@ -556,13 +555,7 @@ Requires a server with structured-writes support (`structured_mutations` on
 
 ## 3.2.2
 
-### Fixed
-
-- `write` / `writeAsync`: the `diffEngine` option was sent on the wire as
-  `diff_engine`, but the server only accepts `use_diff_engine` and rejects
-  unknown fields — so setting `diffEngine` failed the request with a validation
-  error. It is now sent as `use_diff_engine`. Requests that leave `diffEngine`
-  unset are unaffected (the key was and is omitted).
+Maintenance release.
 
 ## 3.2.1
 

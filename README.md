@@ -194,7 +194,7 @@ Every data operation — `read`, `write`, `writeAsync`, `writeStatus`, `extract`
 `console_url`, the deep link to that call's trace. It is per operation rather than per
 record, and `null` when the server has no console configured.
 
-Options: `{ extractionLogic?, diffEngine?, scope?, timeoutMs? }` — `extractionLogic`
+Options: `{ extractionLogic?, scope?, timeoutMs? }` — `extractionLogic`
 defaults to `"fast"`; see [Scoped writes](#scoped-writes) for `scope` and its `mode`.
 
 Or pass a `WriteMutation[]` for **structured writes** — deterministic, LLM-free
@@ -313,11 +313,7 @@ next_steps:
   every fact.
 - If a merge cannot be made, the new value is appended, even past the cap, and
   nothing stored is cut.
-- Only text writes merge, through the server's diff engine. A text write that
-  runs without it on such a schema — `diffEngine: false`, or a connection whose
-  default is off — is refused with a 400 `VALIDATION_ERROR`; through
-  `writeAsync` it is queued and fails, which `writeStatus` reports.
-  `WriteMutation[]` writes replace the value as given.
+- Only text writes merge. `WriteMutation[]` writes replace the value as given.
 - Adding, changing or removing a `merge` is a metadata-only schema change.
 
 Where a merge that changed the field found the new value contradicting the
@@ -614,8 +610,6 @@ Things to know before reaching for it:
   scope names records by that key, so a type declared `primary_key: []` has
   nothing to name its records by — and `"drop"` never creates a record of such a
   type, for the same reason.
-- `"drop"` is computed by the server's **diff engine**, so asking for it with
-  `diffEngine: false` is refused with a 400. `"reject"` has no such requirement.
 - The server caps the number of scoped objects per write, and can have scoped
   writes disabled entirely. Both are server-side rules, so they surface as an
   `XmemoryAPIError`.

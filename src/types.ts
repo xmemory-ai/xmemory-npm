@@ -73,8 +73,7 @@ export interface ReadScope {
  * is what makes "create or update exactly this record" expressible, while
  * `"reject"` requires every scoped record to exist already. And a type that
  * declares no user-defined primary key is never created under `"drop"`, since
- * a scope has no way to name such a record. `"drop"` is computed by the
- * server's diff engine, so pairing it with `diffEngine: false` is a 400.
+ * a scope has no way to name such a record.
  */
 export type WriteScopeMode = "reject" | "drop";
 
