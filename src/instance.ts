@@ -335,8 +335,8 @@ export class InstanceHandle {
    * or a `WriteMutation[]` to apply deterministic, LLM-free create / update /
    * delete edits (applied in array order; later mutations may reference
    * objects created earlier in the batch, and a `null` value in a mutation's
-   * `values` clears that field). `extractionLogic` / `diffEngine` only apply
-   * to the text form.
+   * `values` clears that field). `extractionLogic` only applies to the text
+   * form.
    *
    * Pass `scope` — a `WriteScope` of concrete objects, each named by its
    * user-defined primary key — to anchor a text write to them. The write is
@@ -350,13 +350,7 @@ export class InstanceHandle {
    * fails, and nothing applies. Under `"drop"` that change is skipped — along
    * with anything that depended on it — the rest applies, and what was left out
    * comes back on `result.changes.skipped_out_of_scope`. `"drop"` also lets the
-   * write create a scoped record that is not stored yet, and is computed by the
-   * diff engine, so passing `diffEngine: false` with it is a 400.
-   *
-   * A text write on a schema with a `merge` field also needs the diff engine:
-   * with the engine off, by `diffEngine: false` or by the connection's default,
-   * it is refused with a 400 `VALIDATION_ERROR`; a {@link writeAsync} one is
-   * queued and fails, which {@link writeStatus} reports.
+   * write create a scoped record that is not stored yet.
    *
    * A scoped write additionally requires read permission on the instance: the
    * response carries the previous value of every field the write changed,
