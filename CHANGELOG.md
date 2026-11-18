@@ -2,6 +2,16 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.21.2
+
+Documentation-only release: the write docs describe merges and drop mode as
+they apply to every text write. No API or behavior change.
+
+### Changed
+
+- The README, the `write` docs and `WriteScopeMode` describe merges and drop
+  mode for every text write.
+
 ## 3.21.1
 
 Documentation-only release: names the permission related types need as the
