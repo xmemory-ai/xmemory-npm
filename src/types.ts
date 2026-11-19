@@ -695,25 +695,25 @@ export interface GenerateSchemaResult {
 export interface RelationEndpoint {
   /** Relation role name from the instance schema. */
   object_name: string;
-  /** Endpoint identity: user primary-key fields (field -> value), or `{ xuid: ... }`. */
+  /** Endpoint identity: user primary-key fields (field -> value). */
   key?: Record<string, unknown>;
 }
 
-/** Create an object: `key` holds the user primary-key fields (no `xuid` — it is
- * generated server-side), `values` the remaining field values. */
+/** Create an object: `key` holds the user primary-key fields, `values` the
+ * remaining field values. */
 export interface ObjectCreatePayload {
   key?: Record<string, unknown>;
   values?: Record<string, unknown>;
 }
 
-/** Update an object identified by `key` (primary-key fields or `{ xuid: ... }`).
- * A `null` value in `values` clears that field. */
+/** Update an object identified by `key` (its primary-key fields). A `null` value
+ * in `values` clears that field. */
 export interface ObjectUpdatePayload {
   key: Record<string, unknown>;
   values: Record<string, unknown>;
 }
 
-/** Delete the object identified by `key` (primary-key fields or `{ xuid: ... }`). */
+/** Delete the object identified by `key` (its primary-key fields). */
 export interface ObjectDeletePayload {
   key: Record<string, unknown>;
 }
@@ -724,18 +724,17 @@ export interface RelationCreatePayload {
   values?: Record<string, unknown>;
 }
 
-/** Update a relation's own fields. Address it by `endpoints`, or by
- * `key: { xuid: ... }` when endpoints are ambiguous. A `null` value in `values`
- * clears that field. */
+/** Update a relation's own fields on one link, named by its `endpoints` (one per
+ * relation role); endpoints that match several links are refused. A `null` value
+ * in `values` clears that field. */
 export interface RelationUpdatePayload {
   key?: Record<string, unknown>;
   endpoints?: RelationEndpoint[];
   values: Record<string, unknown>;
 }
 
-/** Delete relation(s) matched by `endpoints` (a subset is allowed) or by
- * `key: { xuid: ... }`. Deleting more than one matched row requires
- * `allow_bulk_delete: true`. */
+/** Delete the links matched by `endpoints` (a subset is allowed). Deleting more
+ * than one matched link requires `allow_bulk_delete: true`. */
 export interface RelationDeletePayload {
   key?: Record<string, unknown>;
   endpoints?: RelationEndpoint[];
@@ -774,6 +773,7 @@ export type MigrationSource = "direct" | "suggestion_engine";
 export type DefaultValue = string | number | boolean | null;
 export type EnumValues = Array<string | number | boolean> | null;
 
+/** An object's or a relation's field, as a migration op adds it. */
 export interface FieldSpec {
   name: string;
   type: FieldType;
@@ -858,6 +858,11 @@ export interface AddRelation {
   objects: Record<string, string>;
   keys?: Record<string, string[]> | null;
   on_delete?: Record<string, OnDelete> | null;
+  /** The relation's own fields: values that belong to one link, such as a
+   * person's title at a company. They are set when the relation is added; no
+   * migration op changes them later. None of them may be `required`. Leave the
+   * key out for a relation without fields of its own. */
+  fields?: FieldSpec[];
   should_backfill?: boolean;
 }
 

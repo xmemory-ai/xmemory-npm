@@ -13,6 +13,7 @@ import {
   InstanceHandle,
   xmemoryInstance,
   SchemaType,
+  type AddRelation,
   type SkippedOutOfScope,
   type FieldMergeContradiction,
   type OrphanedRecord,
@@ -238,7 +239,7 @@ function mockFetch(
   check("structured write: no extraction_logic key", !("extraction_logic" in capturedBody));
 
   await inst.writeAsync([
-    { object_mutation: { object_type: "person", update: { key: { xuid: "x-1" }, values: { role: null } } } },
+    { object_mutation: { object_type: "person", update: { key: { name: "Bob" }, values: { role: null } } } },
   ]);
   check("structured writeAsync: hits /write_async", capturedUrl.endsWith("/instances/test-inst/write_async"));
   check(
@@ -743,6 +744,29 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
     "updateInstanceSchema plan keeps snake_case op",
     JSON.stringify(body.migration_plan).includes("remove_field"),
   );
+  globalThis.fetch = orig;
+}
+
+// A relation's own fields travel with its add_relation op, as the server sends them.
+{
+  let captured: Record<string, unknown> | null = null;
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    captured = init?.body ? JSON.parse(init.body as string) : null;
+    return { status: 200, body: { items: [{ id: "i", cluster_id: "c", name: "n", description: null }] } };
+  });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const addEmployment: AddRelation = {
+    op_type: "add_relation",
+    name: "employment",
+    objects: { person: "person", company: "company" },
+    fields: [{ name: "title", type: "str", description: "job title at this company" }],
+  };
+  await c.admin.updateInstanceSchema("inst-1", "objects: {}", SchemaType.YML, {
+    migrationPlan: { ops: [addEmployment] },
+  });
+  const sent = (captured?.["migration_plan"] as { ops: AddRelation[] } | undefined)?.ops[0];
+  check("updateInstanceSchema sends a relation's own fields", sent?.fields?.[0]?.name === "title");
   globalThis.fetch = orig;
 }
 
