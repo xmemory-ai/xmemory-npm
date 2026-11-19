@@ -860,8 +860,8 @@ export interface AddRelation {
   on_delete?: Record<string, OnDelete> | null;
   /** The relation's own fields: values that belong to one link, such as a
    * person's title at a company. They are set when the relation is added; no
-   * migration op changes them later. None of them may be `required`. Leave the
-   * key out for a relation without fields of its own. */
+   * migration op changes them later. None of them may be `required` or declare a
+   * format. Leave the key out for a relation without fields of its own. */
   fields?: FieldSpec[];
   should_backfill?: boolean;
 }

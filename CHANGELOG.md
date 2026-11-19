@@ -23,7 +23,7 @@ Types a relation's own fields in migration plans.
 - The structured mutation docs (`RelationEndpoint`, `ObjectCreatePayload`,
   `ObjectUpdatePayload`, `ObjectDeletePayload`, `RelationUpdatePayload`,
   `RelationDeletePayload`) name an object by its primary-key fields and a link
-  by its endpoints, as the server accepts them.
+  by its endpoints.
 
 ## 3.21.2
 
