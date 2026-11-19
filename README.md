@@ -245,9 +245,9 @@ A type declared with `primary_key: []` has no key. A `create` takes an empty
 by `match` with an empty `key`: field values the record holds, compared as keys
 are. `match` must single out one record unless `allow_bulk: true` acts on every
 record it matches, up to 100 records per request. A relation endpoint of such a
-type takes `match` in place of `key` too. For an update or delete, the client
-refuses a non-empty `key` with `match`, and `allow_bulk` without `match`, when it
-builds the request:
+type takes `match` in place of `key` too. When it builds the request, the client
+refuses a record named by both a `key` and a `match` that hold values (an update,
+a delete or a relation endpoint), and `allow_bulk` without `match`:
 
 ```typescript
 await inst.write([

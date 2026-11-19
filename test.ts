@@ -285,6 +285,49 @@ function mockFetch(
   check("structured write: allow_bulk without match is refused", bulkByKey.includes("only with 'match'"));
   check("structured write: a refused mutation sends nothing", JSON.stringify(capturedBody) === sentBefore);
 
+  // Emptiness is judged on what the request carries: JSON leaves out an undefined value.
+  await inst.write([
+    { object_mutation: { object_type: "ObjA", update: { key: { f1: undefined }, match: { f1: "v1" }, values: {} } } },
+  ]);
+  check(
+    "structured write: a key of undefined values does not count beside match",
+    JSON.stringify(capturedBody.structured_mutations) ===
+      JSON.stringify([{ object_mutation: { object_type: "ObjA", update: { key: {}, match: { f1: "v1" }, values: {} } } }]),
+  );
+  let bulkByEmptyMatch = "";
+  try {
+    await inst.write([
+      { object_mutation: { object_type: "ObjA", delete: { key: {}, match: { f1: undefined }, allow_bulk: true } } },
+    ]);
+  } catch (e) {
+    bulkByEmptyMatch = (e as Error).message;
+  }
+  check("structured write: a match of undefined values does not count", bulkByEmptyMatch.includes("only with 'match'"));
+  let endpointKeyAndMatch = "";
+  try {
+    await inst.write([
+      {
+        relation_mutation: {
+          relation_type: "RelA",
+          create: { endpoints: [{ object_name: "r1", key: { f1: "v1" }, match: { f1: "v1" } }] },
+        },
+      },
+    ]);
+  } catch (e) {
+    endpointKeyAndMatch = (e as Error).message;
+  }
+  check(
+    "structured write: an endpoint named by key and match is refused",
+    endpointKeyAndMatch.includes("endpoint 0") && endpointKeyAndMatch.includes("not both"),
+  );
+  let notAnObject = "";
+  try {
+    await inst.write([null as unknown as WriteMutation]);
+  } catch (e) {
+    notAnObject = (e as Error).message;
+  }
+  check("structured write: a mutation that is not an object gets a clear error", notAnObject.includes("must be an object"));
+
   await inst.write("plain text");
   check("text write: no structured_mutations key", !("structured_mutations" in capturedBody));
 
