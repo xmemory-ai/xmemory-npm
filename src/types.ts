@@ -697,25 +697,39 @@ export interface RelationEndpoint {
   object_name: string;
   /** Endpoint identity: user primary-key fields (field -> value). */
   key?: Record<string, unknown>;
+  /** For an endpoint of a type without a primary key, in place of `key`: field
+   * values the record holds, which must single out one record. */
+  match?: Record<string, unknown>;
 }
 
 /** Create an object: `key` holds the user primary-key fields, `values` the
- * remaining field values. */
+ * remaining field values. For a type without a primary key, `key` is empty,
+ * `values` holds at least one non-null value, and each create adds a new record. */
 export interface ObjectCreatePayload {
   key?: Record<string, unknown>;
   values?: Record<string, unknown>;
 }
 
-/** Update an object identified by `key` (its primary-key fields). A `null` value
- * in `values` clears that field. */
+/** Update an object identified by `key` (its primary-key fields), or, for a type
+ * without a primary key, by `match` with an empty `key`: field values the record
+ * holds, compared as keys are. `match` must single out one record unless
+ * `allow_bulk: true` acts on every record it matches, up to 100 records per
+ * request. A `null` value in `values` clears that field. The client refuses a
+ * non-empty `key` with `match`, and `allow_bulk` without `match`, when it builds
+ * the request. */
 export interface ObjectUpdatePayload {
   key: Record<string, unknown>;
+  match?: Record<string, unknown>;
+  allow_bulk?: boolean;
   values: Record<string, unknown>;
 }
 
-/** Delete the object identified by `key` (its primary-key fields). */
+/** Delete the object identified by `key` (its primary-key fields), or, for a type
+ * without a primary key, by `match` with an empty `key`, as for an update. */
 export interface ObjectDeletePayload {
   key: Record<string, unknown>;
+  match?: Record<string, unknown>;
+  allow_bulk?: boolean;
 }
 
 /** Create a relation between the `endpoints`, with optional own-field `values`. */

@@ -2,6 +2,30 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.24.0
+
+Types naming a record of a type without a primary key in structured writes.
+
+### Added
+
+- `match` and `allow_bulk` on an object `update` and `delete`
+  (`ObjectUpdatePayload`, `ObjectDeletePayload`), and `match` on
+  `RelationEndpoint`: for a type declared with `primary_key: []`, `match` names
+  the record by field values it holds, compared as keys are, with an empty
+  `key`. It must single out one record unless `allow_bulk: true`, which acts on
+  every record it matches, up to 100 records per request.
+- `write` and `writeAsync` refuse an update or delete that gives a non-empty
+  `key` with `match`, or `allow_bulk` without `match`, when they build the
+  request, before sending it. The check runs then, not at compile time: the new
+  keys are optional and `key` stays required, so code written for 3.23.0
+  compiles as before.
+
+### Changed
+
+- The README shows an update and a delete by `match`, and says how a record of
+  such a type is created: an empty `key` and at least one non-null value.
+  `ObjectCreatePayload`'s doc says the same.
+
 ## 3.23.0
 
 Types a field's format and the labels on fields and objects in migration plans.

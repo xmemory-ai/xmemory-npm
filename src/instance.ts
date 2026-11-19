@@ -40,6 +40,27 @@ function serializeScopeObjects(objects: readonly ScopeObject[]): Record<string, 
   return objects.map((o) => ({ type: o.type, key: { key: o.key } }));
 }
 
+/** Throw when an object update or delete names its record by a non-empty `key` and
+ * by `match` at once, or sets `allow_bulk` without `match`: the server refuses
+ * both, and the types leave `key` required so that code built before `match`
+ * compiles as before. */
+function checkObjectTargets(mutations: readonly WriteMutation[]): void {
+  mutations.forEach((mutation, index) => {
+    if (!("object_mutation" in mutation) || mutation.object_mutation == null) return;
+    const body = mutation.object_mutation;
+    const target = body.update ?? body.delete;
+    if (target == null) return;
+    const hasKey = Object.keys(target.key ?? {}).length > 0;
+    const hasMatch = Object.keys(target.match ?? {}).length > 0;
+    if (hasKey && hasMatch) {
+      throw new Error(`mutation ${index}: name the record by 'key' or by 'match', not both`);
+    }
+    if (target.allow_bulk === true && !hasMatch) {
+      throw new Error(`mutation ${index}: 'allow_bulk' applies only with 'match'`);
+    }
+  });
+}
+
 /** Build the shared `/write` + `/write_async` request body for either input mode. */
 function buildWriteBody(
   input: string | readonly WriteMutation[],
@@ -55,6 +76,7 @@ function buildWriteBody(
     if (options?.scope != null) {
       throw new Error("'scope' and structured mutations are mutually exclusive");
     }
+    checkObjectTargets(input);
     // Structured path: no text, no extraction options — mutations go straight
     // to the wire.
     return { structured_mutations: input };

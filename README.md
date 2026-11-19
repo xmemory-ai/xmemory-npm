@@ -240,6 +240,22 @@ await inst.write([
 ]);
 ```
 
+A type declared with `primary_key: []` has no key. A `create` takes an empty
+`key` and at least one non-null value. An `update` or `delete` names the record
+by `match` with an empty `key`: field values the record holds, compared as keys
+are. `match` must single out one record unless `allow_bulk: true` acts on every
+record it matches, up to 100 records per request. A relation endpoint of such a
+type takes `match` in place of `key` too. For an update or delete, the client
+refuses a non-empty `key` with `match`, and `allow_bulk` without `match`, when it
+builds the request:
+
+```typescript
+await inst.write([
+  { object_mutation: { object_type: "item", update: { key: {}, match: { label: "A" }, values: { status: "done" } } } },
+  { object_mutation: { object_type: "item", delete: { key: {}, match: { status: "void" }, allow_bulk: true } } },
+]);
+```
+
 Options for the mutations form: `{ timeoutMs? }` (extraction options don't apply).
 
 ### `inst.writeAsync(text | mutations, options?)` → `AsyncWriteResult`
