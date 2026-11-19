@@ -219,8 +219,9 @@ const result = await inst.write([
 ]);
 ```
 
-A relation mutation sets the relation's own fields (see
-[Fields on a relation](#fields-on-a-relation)) in `values`. An `update` names one
+Continuing the example above, where Bob was created: a relation mutation sets the
+relation's own fields (see [Fields on a relation](#fields-on-a-relation)) in
+`values`. An `update` names one
 link by every endpoint, in a later write than the one that created it: a request
 that creates a link cannot also change it. Here `person` and `company` declare
 `primary_key: [name]`, which addressing them by `key` needs:
@@ -335,10 +336,11 @@ relations:
 ```
 
 - A relation's field is never `required`, since a link is made before its values
-  are known. It takes no `merge`, and it cannot share a name with one of the
-  relation's roles or with a name the server reserves. A schema that breaks this
-  is refused: an `XmemoryAPIError` with status 422, code `INVALID_INPUT` and
-  `details.error_code` set to `"xmd_relation_field_invalid"`.
+  are known. It takes no `merge` or `format`, and it cannot share a name with one
+  of the relation's roles or with a name the server reserves. A schema that breaks
+  this is refused: an `XmemoryAPIError` with status 422, code `INVALID_INPUT` and
+  `details.error_code` set to `"xmd_relation_field_invalid"` (a field that is not
+  well formed gets its own validation error instead).
 - A relation's fields are declared when the relation is added, in the schema; a
   migration plan's `add_relation` op carries the same fields. On a relation that
   already exists, a schema update that adds or removes a field, or changes its
