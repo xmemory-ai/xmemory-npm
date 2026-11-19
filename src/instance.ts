@@ -40,19 +40,38 @@ function serializeScopeObjects(objects: readonly ScopeObject[]): Record<string, 
   return objects.map((o) => ({ type: o.type, key: { key: o.key } }));
 }
 
-/** Throw when an object update or delete names its record by a non-empty `key` and
- * by `match` at once, or sets `allow_bulk` without `match`: the server refuses
- * both, and the types leave `key` required so that code built before `match`
- * compiles as before. */
-function checkObjectTargets(mutations: readonly WriteMutation[]): void {
+/** Whether a mapping holds a value the request will carry: JSON leaves out a
+ * property whose value is `undefined`, so such a property does not count. */
+function holdsAValue(mapping: Record<string, unknown> | undefined): boolean {
+  return Object.values(mapping ?? {}).some((value) => value !== undefined);
+}
+
+/** Throw when a record is named by `key` and by `match` at once (an object update
+ * or delete, or a relation endpoint), or an object update or delete sets
+ * `allow_bulk` without `match`: the server refuses both, and the types leave
+ * `key` required so that code built before `match` compiles as before. Each
+ * mutation must be an object. */
+function checkTargets(mutations: readonly WriteMutation[]): void {
   mutations.forEach((mutation, index) => {
+    if (mutation == null || typeof mutation !== "object") {
+      throw new Error(`mutation ${index}: each mutation must be an object`);
+    }
+    if ("relation_mutation" in mutation && mutation.relation_mutation != null) {
+      const body = mutation.relation_mutation;
+      const endpoints = (body.create ?? body.update ?? body.delete)?.endpoints ?? [];
+      endpoints.forEach((endpoint, at) => {
+        if (holdsAValue(endpoint.key) && holdsAValue(endpoint.match)) {
+          throw new Error(`mutation ${index}, endpoint ${at}: name the record by 'key' or by 'match', not both`);
+        }
+      });
+      return;
+    }
     if (!("object_mutation" in mutation) || mutation.object_mutation == null) return;
     const body = mutation.object_mutation;
     const target = body.update ?? body.delete;
     if (target == null) return;
-    const hasKey = Object.keys(target.key ?? {}).length > 0;
-    const hasMatch = Object.keys(target.match ?? {}).length > 0;
-    if (hasKey && hasMatch) {
+    const hasMatch = holdsAValue(target.match);
+    if (holdsAValue(target.key) && hasMatch) {
       throw new Error(`mutation ${index}: name the record by 'key' or by 'match', not both`);
     }
     if (target.allow_bulk === true && !hasMatch) {
@@ -76,7 +95,7 @@ function buildWriteBody(
     if (options?.scope != null) {
       throw new Error("'scope' and structured mutations are mutually exclusive");
     }
-    checkObjectTargets(input);
+    checkTargets(input);
     // Structured path: no text, no extraction options — mutations go straight
     // to the wire.
     return { structured_mutations: input };

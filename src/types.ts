@@ -698,7 +698,8 @@ export interface RelationEndpoint {
   /** Endpoint identity: user primary-key fields (field -> value). */
   key?: Record<string, unknown>;
   /** For an endpoint of a type without a primary key, in place of `key`: field
-   * values the record holds, which must single out one record. */
+   * values the record holds, which must single out one record. The client refuses
+   * an endpoint whose `key` and `match` both hold values. */
   match?: Record<string, unknown>;
 }
 

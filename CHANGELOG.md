@@ -14,11 +14,13 @@ Types naming a record of a type without a primary key in structured writes.
   the record by field values it holds, compared as keys are, with an empty
   `key`. It must single out one record unless `allow_bulk: true`, which acts on
   every record it matches, up to 100 records per request.
-- `write` and `writeAsync` refuse an update or delete that gives a non-empty
-  `key` with `match`, or `allow_bulk` without `match`, when they build the
-  request, before sending it. The check runs then, not at compile time: the new
-  keys are optional and `key` stays required, so code written for 3.23.0
-  compiles as before.
+- `write` and `writeAsync` refuse, when they build the request and before
+  sending it, a record named by both a `key` and a `match` that hold values (an
+  update, a delete or a relation endpoint), and `allow_bulk` without `match`. A
+  value left `undefined` does not count, since the request leaves it out. The
+  check runs then, not at compile time: the new keys are optional and `key`
+  stays required, so code written for 3.23.0 compiles as before. A structured
+  mutation that is not an object is refused with a clear message.
 
 ### Changed
 
