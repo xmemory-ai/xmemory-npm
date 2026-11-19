@@ -219,6 +219,26 @@ const result = await inst.write([
 ]);
 ```
 
+A relation mutation sets the relation's own fields (see
+[Fields on a relation](#fields-on-a-relation)) in `values`. An `update` names one
+link by every endpoint, in a later write than the one that created it: a request
+that creates a link cannot also change it. Here `person` and `company` declare
+`primary_key: [name]`, which addressing them by `key` needs:
+
+```typescript
+const bobAtAcme = [
+  { object_name: "person", key: { name: "Bob" } },
+  { object_name: "company", key: { name: "Acme" } },
+];
+await inst.write([
+  { object_mutation: { object_type: "company", create: { key: { name: "Acme" } } } },
+  { relation_mutation: { relation_type: "employment", create: { endpoints: bobAtAcme, values: { title: "designer" } } } },
+]);
+await inst.write([
+  { relation_mutation: { relation_type: "employment", update: { endpoints: bobAtAcme, values: { title: "lead designer" } } } },
+]);
+```
+
 Options for the mutations form: `{ timeoutMs? }` (extraction options don't apply).
 
 ### `inst.writeAsync(text | mutations, options?)` → `AsyncWriteResult`
@@ -283,6 +303,50 @@ await inst.write([
   },
 ]);
 ```
+
+### Fields on a relation
+
+A relation can declare fields of its own in the schema: values that belong to
+one link rather than to either record, such as a person's title at a company.
+Only structured writes set them; a text write does not, so a value that will
+arrive in text is best kept on an object. They are shaped like an object's
+fields:
+
+```yaml
+relations:
+  employment:
+    objects:
+      person:
+        type: person
+        on_delete: cascade
+      company:
+        type: company
+        on_delete: cascade
+    keys:
+      one_link_per_pair: [person, company]
+    fields:
+      title:
+        type: str
+        description: the person's job title at this company
+      started_on:
+        type: str
+        description: the day the person started at this company, as YYYY-MM-DD
+    description: person works at company
+```
+
+- A relation's field is never `required`, since a link is made before its values
+  are known. It takes no `merge`, and it cannot share a name with one of the
+  relation's roles or with a name the server reserves. A schema that breaks this
+  is refused: an `XmemoryAPIError` with status 422, code `INVALID_INPUT` and
+  `details.error_code` set to `"xmd_relation_field_invalid"`.
+- A relation's fields are declared when the relation is added, in the schema; a
+  migration plan's `add_relation` op carries the same fields. On a relation that
+  already exists, a schema update that adds or removes a field, or changes its
+  type, enum or default, is refused; its description can change.
+- A relation `create` takes their values in `values`, and an `update` names one
+  link by every endpoint and sets them (see the example under `inst.write`). A
+  key over the relation's roles, as above, keeps the same two records to one
+  link, so an `update` by their endpoints never finds more than one.
 
 ### Mergeable text fields
 

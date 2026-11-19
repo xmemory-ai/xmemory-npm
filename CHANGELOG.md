@@ -2,6 +2,29 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.22.0
+
+Types a relation's own fields in migration plans.
+
+### Added
+
+- `AddRelation.fields?: FieldSpec[]` — the relation's own fields: values that
+  belong to one link, such as a person's title at a company. A plan the server
+  returns already carried them through at runtime; the type now names them, so
+  an `add_relation` op can state them and a caller can read them.
+
+### Changed
+
+- The README gains "Fields on a relation": how a relation declares them, what
+  such a field may not be, and that they are set when the relation is added.
+  The structured write example sets one with a relation `create`, and changes
+  it with an `update` in a later write. `FieldSpec`'s doc says it describes a
+  relation's field too.
+- The structured mutation docs (`RelationEndpoint`, `ObjectCreatePayload`,
+  `ObjectUpdatePayload`, `ObjectDeletePayload`, `RelationUpdatePayload`,
+  `RelationDeletePayload`) name an object by its primary-key fields and a link
+  by its endpoints, as the server accepts them.
+
 ## 3.21.2
 
 Documentation-only release: the write docs describe merges and drop mode as
