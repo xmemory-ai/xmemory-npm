@@ -772,6 +772,12 @@ export type DecisionKind = "accept" | "reject" | "defer";
 export type MigrationSource = "direct" | "suggestion_engine";
 export type DefaultValue = string | number | boolean | null;
 export type EnumValues = Array<string | number | boolean> | null;
+/** A field's declared format, as the server holds it. Kept open so a value a newer
+ * server adds, or a caller's own interface for one, still type-checks (`unknown`
+ * values would refuse an interface without an index signature). */
+export type FieldFormat = Record<string, any>;
+/** A field's label, as the server holds it. */
+export type FieldKind = string;
 
 /** An object's or a relation's field, as a migration op adds it. */
 export interface FieldSpec {
@@ -781,6 +787,8 @@ export interface FieldSpec {
   description?: string | null;
   default?: DefaultValue;
   enum?: EnumValues;
+  format?: FieldFormat;
+  field_kind?: FieldKind;
 }
 
 export interface AddObject {
@@ -790,6 +798,8 @@ export interface AddObject {
   primary_key: string[];
   fields: FieldSpec[];
   should_backfill?: boolean;
+  /** The object's label. */
+  interval?: boolean;
 }
 
 export interface RemoveObject {
@@ -808,6 +818,8 @@ export interface ChangeObject {
   name: string;
   new_primary_key?: string[] | null;
   new_description?: string | null;
+  /** Sets the object's label. */
+  new_interval?: boolean;
 }
 
 export interface AddField {
@@ -820,6 +832,8 @@ export interface AddField {
   default?: DefaultValue;
   enum?: EnumValues;
   should_backfill?: boolean;
+  format?: FieldFormat;
+  field_kind?: FieldKind;
 }
 
 export interface RemoveField {
@@ -849,6 +863,12 @@ export interface ChangeField {
   cast_strategy?: CastStrategy | null;
   using_expression?: string | null;
   confirm_data_loss?: boolean;
+  /** Sets or replaces the field's declared format; `clear_format: true` removes it.
+   * Never both in one op. */
+  new_format?: FieldFormat;
+  clear_format?: boolean;
+  /** Sets the field's label. */
+  new_field_kind?: FieldKind;
 }
 
 export interface AddRelation {

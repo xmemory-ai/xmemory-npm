@@ -119,6 +119,8 @@ export type {
   ChangeRelation,
   DefaultValue,
   EnumValues,
+  FieldFormat,
+  FieldKind,
 } from "./types.js";
 
 // Schema evolution — results

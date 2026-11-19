@@ -2,6 +2,25 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.23.0
+
+Types a field's format and the labels on fields and objects in migration plans.
+
+### Added
+
+- `FieldSpec.format` and `field_kind`, `AddField.format` and `field_kind`,
+  `ChangeField.new_format`, `clear_format` and `new_field_kind`,
+  `AddObject.interval` and `ChangeObject.new_interval`, with the `FieldFormat`
+  and `FieldKind` types: the keys a migration plan the server returns may carry
+  for a field's declared format and for the labels on fields and objects. Plans
+  already carried them through at runtime; the types now name them.
+
+### Changed
+
+- The README gains "Labels": what the labels on fields and objects are, hints
+  xmemory sets, kept when you state one that fits, with a link to the XMD guide
+  for what each value means.
+
 ## 3.22.0
 
 Types a relation's own fields in migration plans.

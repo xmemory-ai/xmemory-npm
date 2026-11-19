@@ -14,6 +14,7 @@ import {
   xmemoryInstance,
   SchemaType,
   type AddRelation,
+  type MigrationOp,
   type SkippedOutOfScope,
   type FieldMergeContradiction,
   type OrphanedRecord,
@@ -767,6 +768,54 @@ check("inst.applyPendingDecisions", typeof inst.applyPendingDecisions === "funct
   });
   const sent = (captured?.["migration_plan"] as { ops: AddRelation[] } | undefined)?.ops[0];
   check("updateInstanceSchema sends a relation's own fields", sent?.fields?.[0]?.name === "title");
+  globalThis.fetch = orig;
+}
+
+// Format and label keys an enhanced plan carries type-check and travel as written.
+{
+  let captured: Record<string, unknown> | null = null;
+  const orig = globalThis.fetch;
+  globalThis.fetch = mockFetch((_url, init) => {
+    captured = init?.body ? JSON.parse(init.body as string) : null;
+    return { status: 200, body: { items: [{ id: "i", cluster_id: "c", name: "n", description: null }] } };
+  });
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  // One new key per op, so the type check names each key the types would lose.
+  // A caller's own interface for a format value type-checks too.
+  interface CallerFormat {
+    p1: "v1";
+  }
+  const callerFormat: CallerFormat = { p1: "v1" };
+  const ops: MigrationOp[] = [
+    { op_type: "change_field", object_name: "ObjA", field_name: "f1", new_format: callerFormat },
+    { op_type: "change_field", object_name: "ObjA", field_name: "f1", clear_format: true },
+    { op_type: "change_field", object_name: "ObjA", field_name: "f2", new_field_kind: "k1" },
+    {
+      op_type: "add_field",
+      object_name: "ObjA",
+      field_name: "f3",
+      field_type: "float",
+      format: { p2: "v2" },
+    },
+    { op_type: "add_field", object_name: "ObjA", field_name: "f4", field_type: "str", field_kind: "k2" },
+    { op_type: "add_object", name: "ObjB", primary_key: [], fields: [{ name: "f5", type: "str" }], interval: true },
+    {
+      op_type: "add_object",
+      name: "ObjC",
+      primary_key: [],
+      fields: [{ name: "f6", type: "str", format: { p3: true } }],
+    },
+    {
+      op_type: "add_object",
+      name: "ObjD",
+      primary_key: [],
+      fields: [{ name: "f7", type: "str", field_kind: "k1" }],
+    },
+    { op_type: "change_object", name: "ObjB", new_interval: false },
+  ];
+  await c.admin.updateInstanceSchema("inst-1", "objects: {}", SchemaType.YML, { migrationPlan: { ops } });
+  const sent = (captured?.["migration_plan"] as { ops: MigrationOp[] } | undefined)?.ops;
+  check("updateInstanceSchema sends format and label keys as written", JSON.stringify(sent) === JSON.stringify(ops));
   globalThis.fetch = orig;
 }
 

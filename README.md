@@ -305,6 +305,16 @@ await inst.write([
 ]);
 ```
 
+### Labels
+
+Fields and objects may also carry labels that xmemory sets: `field_kind` on a
+field (`free_text`, `state` or `value`) and `interval` on an object (`true` or
+`false`). They are hints about the data that help xmemory handle writes, not
+identifiers or constraints. A label you state is kept, as long as it fits the
+field's other settings; one you leave out keeps its current value. See the XMD
+guide's [Labels](https://xmemory.ai/xmd/#labels) section for what each value
+means.
+
 ### Fields on a relation
 
 A relation can declare fields of its own in the schema: values that belong to
