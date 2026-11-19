@@ -248,6 +248,43 @@ function mockFetch(
     JSON.stringify(capturedBody.structured_mutations).includes('"role":null'),
   );
 
+  // A type without a primary key: its record is named by match, with an empty key,
+  // and a relation endpoint of such a type takes match too.
+  const byMatch: WriteMutation[] = [
+    { object_mutation: { object_type: "ObjA", update: { key: {}, match: { f1: "v1" }, values: { f2: "v2" } } } },
+    { object_mutation: { object_type: "ObjA", delete: { key: {}, match: { f1: "v1" }, allow_bulk: true } } },
+    {
+      relation_mutation: {
+        relation_type: "RelA",
+        create: { endpoints: [{ object_name: "r1", match: { f1: "v1" } }, { object_name: "r2", key: { f3: "v3" } }] },
+      },
+    },
+  ];
+  await inst.write(byMatch);
+  check(
+    "structured write: match and allow_bulk travel as written",
+    JSON.stringify(capturedBody.structured_mutations) === JSON.stringify(byMatch),
+  );
+  // The client refuses what the server would, before sending.
+  const sentBefore = JSON.stringify(capturedBody);
+  let keyAndMatch = "";
+  try {
+    await inst.write([
+      { object_mutation: { object_type: "ObjA", update: { key: { f1: "v1" }, match: { f1: "v1" }, values: {} } } },
+    ]);
+  } catch (e) {
+    keyAndMatch = (e as Error).message;
+  }
+  check("structured write: key and match together are refused", keyAndMatch.includes("not both"));
+  let bulkByKey = "";
+  try {
+    await inst.writeAsync([{ object_mutation: { object_type: "ObjA", delete: { key: { f1: "v1" }, allow_bulk: true } } }]);
+  } catch (e) {
+    bulkByKey = (e as Error).message;
+  }
+  check("structured write: allow_bulk without match is refused", bulkByKey.includes("only with 'match'"));
+  check("structured write: a refused mutation sends nothing", JSON.stringify(capturedBody) === sentBefore);
+
   await inst.write("plain text");
   check("text write: no structured_mutations key", !("structured_mutations" in capturedBody));
 
