@@ -150,13 +150,13 @@ These read as plain strings rather than a narrow union, so a value your server
 knows and this release does not is returned rather than making the instance
 unreadable.
 
-**Setting the standing instructions.** Use `updateInstanceMetadata` for
-`agentOwnerInstructions`, not `patchInstanceMetadata`. The field is rendered to
+**Setting the standing instructions.** `agentOwnerInstructions` is rendered to
 agents verbatim, and a second writer edits it from the same screen, so a
-silently lost edit is a rule that stops being enforced. Only
-`updateInstanceMetadata` carries `expectedOwnerInstructionsEpoch`: pass the
-epoch you read the value at and the server refuses the losing save instead of
-applying it:
+silently lost edit is a rule that stops being enforced. When you edit it, pass
+the epoch you read the value at as `expectedOwnerInstructionsEpoch`, and the
+server refuses the losing save instead of applying it. Both
+`updateInstanceMetadata` and `patchInstanceMetadata` take it;
+`patchInstanceMetadata` sets the field without restating the name:
 
 ```typescript
 const info = await xm.admin.getInstance(instanceId);
@@ -166,10 +166,19 @@ await xm.admin.updateInstanceMetadata(instanceId, info.name, info.description ??
 });
 ```
 
-`patchInstanceMetadata` also accepts the field — it is the only way to set it
-without restating the name — but it can carry no guard, so an edit composed
-from stale data overwrites a newer one silently. Reach for it only when you are
-seeding a value nobody else is editing.
+**Setting the installation instructions.** `agent_installation_instructions` is
+guidance the instance's editors add to the setup prompt a person pastes into an
+agent: the prompt is xmemory's own setup text, followed by these instructions
+when they are set. They are set and guarded the same way as the standing
+instructions, with their own epoch:
+
+```typescript
+const info = await xm.admin.getInstance(instanceId);
+await xm.admin.updateInstanceMetadata(instanceId, info.name, info.description ?? "", {
+  agentInstallationInstructions: "Connect to this memory before you plan a task.",
+  expectedInstallationInstructionsEpoch: info.agent_installation_instructions_epoch,
+});
+```
 
 ## Instance data operations
 
@@ -449,6 +458,29 @@ one type and relation, the rest arrive as one entry marked `folded: true`, with
 an empty `identity` and their `count`. `deleted.relations` folds a delete's
 links past 100 of one relation into one entry with that relation's `name`, empty
 `endpoints` and `fields`, `folded: true` and their `count`.
+
+### Values a write could not store as given
+
+A value the text gave that its field's type cannot hold is still written the
+way the field holds it, and the write says so in
+`changes.unstored_field_values` (`UnstoredFieldValue`): a number field given a
+value it can't read as a number is left empty (`"not_a_number"`), a
+whole-number field given a fraction keeps the whole part (`"truncated"`), and a
+yes/no field given anything else holds a yes or a no the text didn't state
+(`"not_a_boolean"`). Each entry names the record as the write's other entries
+do, plus `field`, `reason`, `given` (the value as given, text cut to 300
+characters) and `stored` (`null` when nothing was stored):
+
+```typescript
+const result = await inst.write("Order 17 is for about twenty units.");
+for (const v of result.changes.unstored_field_values ?? []) {
+  console.log(v.object_type_name, v.identity, v.field, v.reason, v.given, "->", v.stored);
+}
+```
+
+Only records the write wrote are listed, and a field with a declared format is
+not. The key is omitted when there is none and by a server that predates the
+report. A `reason` a newer server adds is still typed, as a plain string.
 
 ### `inst.read(query, options?)` → `ReadResult`
 

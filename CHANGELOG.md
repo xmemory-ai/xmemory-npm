@@ -2,6 +2,36 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.25.0
+
+Agent installation instructions, and the values a write could not store as given.
+
+### Added
+
+- `UnstoredFieldValue` and `WriteChanges.unstored_field_values`: each value a
+  write could not store as given in its field, with the record, the field, a
+  `reason` (`"not_a_number"`, `"truncated"`, `"not_a_boolean"`, or a newer
+  reason as a plain string), the value `given` and the value `stored`. Omitted
+  when there is none. On `write` and on a completed `writeStatus`.
+- `InstanceInfo.agent_installation_instructions` and
+  `agent_installation_instructions_epoch`: guidance the instance's editors add
+  to the setup prompt a person pastes into an agent, and which edit of it the
+  response describes.
+- `agentInstallationInstructions` and `expectedInstallationInstructionsEpoch`
+  on `updateInstanceMetadata` and `patchInstanceMetadata`. Each is sent only
+  when named; `null` clears it.
+- `expectedOwnerInstructionsEpoch` on `patchInstanceMetadata`: a partial
+  update of the standing instructions can now be guarded against a concurrent
+  edit, as `updateInstanceMetadata` always could.
+
+### Changed
+
+- The docs no longer say a partial update can't carry the instructions' epoch
+  guard: the API accepts it there, and `patchInstanceMetadata` now sends it.
+- Tests pin that a read answers the same whether or not the response carries
+  its SQL (`sql` null, no `sqls` or `sql_attempts`), and that `ReadResult`
+  requires none of those keys.
+
 ## 3.24.0
 
 Types naming a record of a type without a primary key in structured writes.

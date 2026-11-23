@@ -582,6 +582,12 @@ export class XmemoryClient {
         if (options?.expectedOwnerInstructionsEpoch !== undefined) {
           body.expected_owner_instructions_epoch = options.expectedOwnerInstructionsEpoch;
         }
+        if (options?.agentInstallationInstructions !== undefined) {
+          body.agent_installation_instructions = options.agentInstallationInstructions;
+        }
+        if (options?.expectedInstallationInstructionsEpoch !== undefined) {
+          body.expected_installation_instructions_epoch = options.expectedInstallationInstructionsEpoch;
+        }
         return this._requestOne<InstanceInfo>("PUT", `/instances/${instanceId}`, {
           body,
           timeoutMs: options?.timeoutMs,
@@ -607,6 +613,15 @@ export class XmemoryClient {
         }
         if (options?.agentOwnerInstructions !== undefined) {
           body.agent_owner_instructions = options.agentOwnerInstructions;
+        }
+        if (options?.expectedOwnerInstructionsEpoch !== undefined) {
+          body.expected_owner_instructions_epoch = options.expectedOwnerInstructionsEpoch;
+        }
+        if (options?.agentInstallationInstructions !== undefined) {
+          body.agent_installation_instructions = options.agentInstallationInstructions;
+        }
+        if (options?.expectedInstallationInstructionsEpoch !== undefined) {
+          body.expected_installation_instructions_epoch = options.expectedInstallationInstructionsEpoch;
         }
         return this._requestOne<InstanceInfo>("PATCH", `/instances/${instanceId}`, {
           body,

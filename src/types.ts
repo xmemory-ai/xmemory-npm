@@ -194,6 +194,14 @@ export interface InstanceInfo {
   // `expectedOwnerInstructionsEpoch` when saving an edit composed from it, and a
   // save that raced someone else's is refused instead of silently overwriting.
   readonly agent_owner_instructions_epoch?: number;
+  // Guidance the instance's editors add to the setup prompt a person pastes into
+  // an agent: the prompt is xmemory's own setup text, followed by this when it is
+  // set. Setup-time guidance, separate from the standing instructions above.
+  // Absent from a server that predates it.
+  readonly agent_installation_instructions?: string | null;
+  // Which edit of the installation instructions this response describes. Pass it
+  // back as `expectedInstallationInstructionsEpoch`, as for the field above.
+  readonly agent_installation_instructions_epoch?: number;
   // Schema-evolution fields — present only on `updateInstanceSchema` responses
   // when the call ran a (non-no-op) migration.
   readonly migration_id?: string | null;
@@ -574,9 +582,37 @@ export interface OrphanedRecord {
 }
 
 /**
+ * A value the text gave that its field's type could not hold as given, in a
+ * field with no declared format. The write still stored what the field holds
+ * for it; this entry says so.
+ */
+export interface UnstoredFieldValue {
+  /** The object type of the record the value was given for. */
+  readonly object_type_name: string;
+  /** The record, named as the write's other entries name it. */
+  readonly identity: string;
+  /** The field the value was given for. */
+  readonly field: string;
+  /**
+   * Why it could not be stored as given: `"not_a_number"` (a number field left
+   * empty), `"truncated"` (a whole-number field given a fraction) or
+   * `"not_a_boolean"` (a yes/no field given anything else, holding a yes or a
+   * no the text did not state). Widened with `(string & {})` like
+   * {@link FieldMergeContradiction.kept}, so a reason a newer server adds is
+   * still typed rather than rejected.
+   */
+  readonly reason: "not_a_number" | "truncated" | "not_a_boolean" | (string & {});
+  /** The value as the text gave it, text cut to 300 characters. */
+  readonly given: unknown;
+  /** What the field holds for it; `null` when nothing was stored. */
+  readonly stored: unknown;
+}
+
+/**
  * What a write did, grouped into `created` / `updated` / `deleted`, plus what a
- * `"drop"`-mode scope left out, the contradictions a field merge resolved and
- * the records a delete left without a link.
+ * `"drop"`-mode scope left out, the contradictions a field merge resolved, the
+ * values a field could not store as given and the records a delete left without
+ * a link.
  *
  * The three groups stay `unknown`: their shape is the server's to evolve and
  * this client has never modelled it. `skipped_out_of_scope` is typed because it
@@ -627,6 +663,14 @@ export interface WriteChanges {
    * the rest arrive folded into one entry (see {@link OrphanedRecord.folded}).
    */
   readonly orphaned_records?: readonly OrphanedRecord[];
+  /**
+   * The values the text gave that their field's type could not hold as given,
+   * one entry each. Only records the write wrote are listed. Advisory: the
+   * write stored what it stored either way. Omitted by the server when there is
+   * none, and by a server that predates the report, so `undefined` and `[]`
+   * both mean "none reported".
+   */
+  readonly unstored_field_values?: readonly UnstoredFieldValue[];
 }
 
 export interface WriteResult {
@@ -637,8 +681,9 @@ export interface WriteResult {
   /**
    * What the write did, grouped into `created` / `updated` / `deleted`; for a
    * scoped write in `"drop"` mode, what it skipped instead of applying; what a
-   * field merge chose between (`merge_contradictions`); and the records a delete
-   * left without a link (`orphaned_records`).
+   * field merge chose between (`merge_contradictions`); the records a delete
+   * left without a link (`orphaned_records`); and the values a field could not
+   * store as given (`unstored_field_values`).
    */
   readonly changes: WriteChanges;
 }
@@ -1207,8 +1252,7 @@ export interface UpdateInstanceMetadataOptions {
   /**
    * The standing preference for how agents should use this instance, set by
    * anyone holding edit permission on it. Rendered verbatim. Max 2000
-   * characters. This is the path to prefer for the field — it is the only one
-   * that carries `expectedOwnerInstructionsEpoch`.
+   * characters. Send `expectedOwnerInstructionsEpoch` with an edit.
    */
   agentOwnerInstructions?: string | null;
   /**
@@ -1216,6 +1260,18 @@ export interface UpdateInstanceMetadataOptions {
    * a save that raced someone else's edit is refused rather than overwriting it.
    */
   expectedOwnerInstructionsEpoch?: number;
+  /**
+   * Guidance added to the setup prompt a person pastes into an agent for this
+   * instance, after xmemory's own setup text. Send the epoch guard below with an
+   * edit.
+   */
+  agentInstallationInstructions?: string | null;
+  /**
+   * The `agent_installation_instructions_epoch` your edit was composed from. Send
+   * it and a save that raced someone else's edit is refused rather than
+   * overwriting it.
+   */
+  expectedInstallationInstructionsEpoch?: number;
   timeoutMs?: number;
 }
 
@@ -1240,13 +1296,27 @@ export interface PatchInstanceMetadataOptions {
    * verified: anyone holding edit permission can set it, including an agent
    * asked to. Max 2000 characters.
    *
-   * Prefer `updateInstanceMetadata` for this field. This endpoint accepts no
-   * `expectedOwnerInstructionsEpoch`, so an edit composed from a value someone
-   * has since replaced overwrites theirs silently. The three hints above are
-   * last-writer-wins by design — a lost update there only re-proposes a
-   * suggestion — but a lost instruction is a rule that stops being enforced.
+   * When editing it, send `expectedOwnerInstructionsEpoch` below. The three
+   * hints above take no such guard and are last-writer-wins by design — a lost
+   * update there only re-proposes a suggestion — but a lost instruction is a
+   * rule that stops being enforced.
    */
   agentOwnerInstructions?: string | null;
+  /**
+   * The `agent_owner_instructions_epoch` your edit was composed from. Send it and
+   * a save that raced someone else's edit is refused rather than overwriting it.
+   */
+  expectedOwnerInstructionsEpoch?: number;
+  /**
+   * Guidance added to the setup prompt a person pastes into an agent for this
+   * instance, after xmemory's own setup text.
+   */
+  agentInstallationInstructions?: string | null;
+  /**
+   * The `agent_installation_instructions_epoch` your edit was composed from,
+   * guarding it as `expectedOwnerInstructionsEpoch` guards the field above.
+   */
+  expectedInstallationInstructionsEpoch?: number;
   timeoutMs?: number;
 }
 
