@@ -2,6 +2,11 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.25.1
+
+Wording only, in the changelog and the tests. No change to the library's code
+or types.
+
 ## 3.25.0
 
 Agent installation instructions, and the values a write could not store as given.
@@ -28,9 +33,6 @@ Agent installation instructions, and the values a write could not store as given
 
 - The docs no longer say a partial update can't carry the instructions' epoch
   guard: the API accepts it there, and `patchInstanceMetadata` now sends it.
-- Tests pin that a read answers the same whether or not the response carries
-  its SQL (`sql` null, no `sqls` or `sql_attempts`), and that `ReadResult`
-  requires none of those keys.
 
 ## 3.24.0
 
