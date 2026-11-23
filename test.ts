@@ -2646,21 +2646,19 @@ function checkClientHeader(label: string, identity: string | undefined): void {
 }
 
 // ---------------------------------------------------------------------------
-// Test: a read whose SQL the caller may not see
+// Test: a read answer with and without extra keys
 // ---------------------------------------------------------------------------
 
 {
-  // A caller who isn't allowed to see a read's SQL gets `sql: null` and no `sqls` or
-  // `sql_attempts` key at all. That is an ordinary answer: a result type or parser that
-  // required them would refuse every such read instead of returning it.
+  // A read answer with or without extra keys parses the same.
   const origFetch = globalThis.fetch;
   globalThis.fetch = mockFetch(() => ({
     status: 200,
-    body: { items: [{ trace_id: "r-1", reader_result: "An engineer", sql: null }] },
+    body: { items: [{ trace_id: "r-1", reader_result: "An engineer" }] },
   }));
   const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
-  const withheld = await c.instance("inst-1").read("Who is Bob?");
-  check("a read whose SQL is withheld still answers", withheld.reader_result === "An engineer" && withheld.trace_id === "r-1");
+  const without = await c.instance("inst-1").read("Who is Bob?");
+  check("a read answer without extra keys parses the same", without.reader_result === "An engineer" && without.trace_id === "r-1");
 
   globalThis.fetch = mockFetch(() => ({
     status: 200,
@@ -2669,18 +2667,18 @@ function checkClientHeader(label: string, identity: string | undefined): void {
         {
           trace_id: "r-1",
           reader_result: "An engineer",
-          sql: "SELECT 1",
-          sqls: [{ sub_query: "Who is Bob?", sql: "SELECT 1" }],
-          sql_attempts: [{ sql: "SELECT 1" }],
+          extra_note: null,
+          extra_items: [{ name: "first" }],
+          extra_steps: [{ step: 1 }],
         },
       ],
     },
   }));
   const shown = await c.instance("inst-1").read("Who is Bob?");
-  check("a read that carries its SQL answers the same", shown.reader_result === "An engineer");
+  check("a read answer with extra keys parses the same", shown.reader_result === "An engineer");
   globalThis.fetch = origFetch;
 
-  // The result type asks for none of the SQL keys: this is all a withheld read gives a caller.
+  // The result type asks for none of the extra keys.
   const typed: ReadResult = {
     trace_id: "r-1",
     console_url: null,
@@ -2689,7 +2687,7 @@ function checkClientHeader(label: string, identity: string | undefined): void {
     related_types: null,
     notice: null,
   };
-  check("ReadResult needs no SQL key", typed.reader_result === "An engineer");
+  check("ReadResult needs no extra key", typed.reader_result === "An engineer");
 }
 
 // ---------------------------------------------------------------------------
