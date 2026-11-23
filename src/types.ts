@@ -196,7 +196,9 @@ export interface InstanceInfo {
   readonly agent_owner_instructions_epoch?: number;
   // Guidance the instance's editors add to the setup prompt a person pastes into
   // an agent: the prompt is xmemory's own setup text, followed by this when it is
-  // set. Setup-time guidance, separate from the standing instructions above.
+  // set. Free text from anyone with edit permission, not xmemory's own directions:
+  // review it before pasting, and label where it came from wherever you show it.
+  // Setup-time guidance, separate from the standing instructions above.
   // Absent from a server that predates it.
   readonly agent_installation_instructions?: string | null;
   // Which edit of the installation instructions this response describes. Pass it

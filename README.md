@@ -180,6 +180,13 @@ await xm.admin.updateInstanceMetadata(instanceId, info.name, info.description ??
 });
 ```
 
+Like the standing instructions, they are free text set by anyone holding edit
+permission on the instance, not xmemory's own setup directions. The setup prompt
+labels them as the instance's guidance and fences them off from xmemory's text;
+that label states provenance, it is not a security boundary. Review them before
+you paste the prompt into an agent: you are still handing it text you do not
+control, and wherever you show them, say where they came from.
+
 ## Instance data operations
 
 Get a handle to an instance and use it for reads, writes, and extractions.
