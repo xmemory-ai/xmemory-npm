@@ -18,6 +18,8 @@ import {
   type SkippedOutOfScope,
   type FieldMergeContradiction,
   type OrphanedRecord,
+  type ReadResult,
+  type UnstoredFieldValue,
   type WriteMutation,
 } from "./src/index.js";
 import { CLIENT_HEADER, buildClientIdentity, withClientHeader } from "./src/client.js";
@@ -2641,6 +2643,186 @@ function checkClientHeader(label: string, identity: string | undefined): void {
   for (const condition of ["import", "require"]) {
     check(`${condition} declares its types first`, Object.keys(entry[condition] ?? {})[0] === "types");
   }
+}
+
+// ---------------------------------------------------------------------------
+// Test: a read whose SQL the caller may not see
+// ---------------------------------------------------------------------------
+
+{
+  // A caller who isn't allowed to see a read's SQL gets `sql: null` and no `sqls` or
+  // `sql_attempts` key at all. That is an ordinary answer: a result type or parser that
+  // required them would refuse every such read instead of returning it.
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ trace_id: "r-1", reader_result: "An engineer", sql: null }] },
+  }));
+  const c = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" });
+  const withheld = await c.instance("inst-1").read("Who is Bob?");
+  check("a read whose SQL is withheld still answers", withheld.reader_result === "An engineer" && withheld.trace_id === "r-1");
+
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [
+        {
+          trace_id: "r-1",
+          reader_result: "An engineer",
+          sql: "SELECT 1",
+          sqls: [{ sub_query: "Who is Bob?", sql: "SELECT 1" }],
+          sql_attempts: [{ sql: "SELECT 1" }],
+        },
+      ],
+    },
+  }));
+  const shown = await c.instance("inst-1").read("Who is Bob?");
+  check("a read that carries its SQL answers the same", shown.reader_result === "An engineer");
+  globalThis.fetch = origFetch;
+
+  // The result type asks for none of the SQL keys: this is all a withheld read gives a caller.
+  const typed: ReadResult = {
+    trace_id: "r-1",
+    console_url: null,
+    reader_result: "An engineer",
+    reader_results: [],
+    related_types: null,
+    notice: null,
+  };
+  check("ReadResult needs no SQL key", typed.reader_result === "An engineer");
+}
+
+// ---------------------------------------------------------------------------
+// Test: values a write could not store as given — changes.unstored_field_values, on both paths
+// ---------------------------------------------------------------------------
+
+{
+  const unstored: UnstoredFieldValue[] = [
+    {
+      object_type_name: "Order",
+      identity: "number='17'",
+      field: "quantity",
+      reason: "not_a_number",
+      given: "about twenty",
+      stored: null,
+    },
+  ];
+  const changes = { created: [], updated: [], deleted: { objects: [], relations: [] }, unstored_field_values: unstored };
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch((url) => {
+    if (url.endsWith("/write_status")) {
+      return {
+        status: 200,
+        body: {
+          items: [
+            { write_id: "w1", write_status: "completed", error_detail: null, completed_at: "2026-11-11T10:00:00Z", changes },
+          ],
+        },
+      };
+    }
+    return { status: 200, body: { items: [{ write_id: "w1", trace_id: "t1", changes }] } };
+  });
+
+  const inst = new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).instance("inst-1");
+  const [v] = (await inst.write("Order 17 is for about twenty units.")).changes.unstored_field_values ?? [];
+  check(
+    "unstored: an entry names the record, the field, the reason, the value given and the value stored",
+    v?.object_type_name === "Order" &&
+      v.identity === "number='17'" &&
+      v.field === "quantity" &&
+      v.reason === "not_a_number" &&
+      v.given === "about twenty" &&
+      v.stored === null,
+  );
+  const status = await inst.writeStatus("w1");
+  check("unstored: a completed status carries the same report", status.changes?.unstored_field_values?.length === 1);
+
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: { items: [{ write_id: "w2", trace_id: "t2", changes: { created: [], updated: [], deleted: [] } }] },
+  }));
+  const plain = await inst.write("Bob is an engineer.");
+  check("unstored: no list when the server omits it", plain.changes.unstored_field_values === undefined);
+  globalThis.fetch = origFetch;
+
+  const later: UnstoredFieldValue = { ...unstored[0]!, reason: "some_future_reason", given: 2.5, stored: 2 };
+  check("unstored: a reason this release has not heard of is still typed", later.reason === "some_future_reason");
+}
+
+// ---------------------------------------------------------------------------
+// Test: agent installation instructions
+// ---------------------------------------------------------------------------
+
+{
+  const INSTALL = "Paste this into your agent to connect it to this memory.";
+
+  const update = await captureRequest((c) =>
+    c.admin.updateInstanceMetadata("i", "n", "d", {
+      agentInstallationInstructions: INSTALL,
+      expectedInstallationInstructionsEpoch: 3,
+    }),
+  );
+  check(
+    "update sends the installation instructions and their epoch guard",
+    JSON.stringify(update.body) ===
+      JSON.stringify({
+        name: "n",
+        description: "d",
+        agent_installation_instructions: INSTALL,
+        expected_installation_instructions_epoch: 3,
+      }),
+  );
+
+  const cleared = await captureRequest((c) =>
+    c.admin.updateInstanceMetadata("i", "n", "d", { agentInstallationInstructions: null }),
+  );
+  check("installation instructions cleared only when passed explicitly", cleared.body.agent_installation_instructions === null);
+
+  const patched = await captureRequest((c) => c.admin.patchInstanceMetadata("i", { agentInstallationInstructions: INSTALL }));
+  check(
+    "patch sends the installation instructions only when named",
+    JSON.stringify(patched.body) === JSON.stringify({ agent_installation_instructions: INSTALL }),
+  );
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch(() => ({
+    status: 200,
+    body: {
+      items: [{ ...INSTANCE_ITEM, agent_installation_instructions: INSTALL, agent_installation_instructions_epoch: 3 }],
+    },
+  }));
+  const info = await new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }).admin.getInstance("i");
+  globalThis.fetch = origFetch;
+  check("InstanceInfo reads the installation instructions", info.agent_installation_instructions === INSTALL);
+  check("InstanceInfo reads their epoch", info.agent_installation_instructions_epoch === 3);
+
+  // PATCH refuses a losing save, as PUT does.
+  const guarded = await captureRequest((c) =>
+    c.admin.patchInstanceMetadata("i", {
+      agentOwnerInstructions: "Prefer updating an existing record.",
+      expectedOwnerInstructionsEpoch: 4,
+      agentInstallationInstructions: INSTALL,
+      expectedInstallationInstructionsEpoch: 3,
+    }),
+  );
+  check(
+    "patch sends the epoch guards when given them",
+    JSON.stringify(guarded.body) ===
+      JSON.stringify({
+        agent_owner_instructions: "Prefer updating an existing record.",
+        expected_owner_instructions_epoch: 4,
+        agent_installation_instructions: INSTALL,
+        expected_installation_instructions_epoch: 3,
+      }),
+  );
+  const unguarded = await captureRequest((c) =>
+    c.admin.patchInstanceMetadata("i", { agentOwnerInstructions: "Prefer updating an existing record." }),
+  );
+  check(
+    "patch sends no epoch guard unless given one",
+    JSON.stringify(unguarded.body) === JSON.stringify({ agent_owner_instructions: "Prefer updating an existing record." }),
+  );
 }
 
 // ---------------------------------------------------------------------------
