@@ -4,8 +4,15 @@ All notable changes to the `xmemory` npm package are documented here.
 
 ## 3.25.1
 
-Wording only, in the changelog and the tests. No change to the library's code
-or types.
+Wording only. No change to the library's code or types.
+
+### Changed
+
+- The README says `agent_installation_instructions` is free text from anyone
+  with edit permission on the instance, not xmemory's own setup directions:
+  review it before pasting the setup prompt into an agent, and say where it
+  came from wherever you show it. `InstanceInfo`'s comment says the same.
+- The changelog and tests are reworded.
 
 ## 3.25.0
 
