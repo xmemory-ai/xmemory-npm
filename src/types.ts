@@ -669,11 +669,12 @@ export interface WriteChanges {
    */
   readonly orphaned_records?: readonly OrphanedRecord[];
   /**
-   * The values the text gave that their field's type could not hold as given,
-   * one entry each. Only records the write wrote are listed. Advisory: the
-   * write stored what it stored either way. Omitted by the server when there is
-   * none, and by a server that predates the report, so `undefined` and `[]`
-   * both mean "none reported".
+   * The values the text gave that their field could not hold as given: one its
+   * type cannot hold, or one that names none of its allowed values. One entry
+   * each, for the records the write wrote, and for a rename it left out (see
+   * {@link UnstoredFieldValue}). Advisory: the write stored what it stored
+   * either way. Omitted by the server when there is none, and by a server that
+   * predates the report, so `undefined` and `[]` both mean "none reported".
    */
   readonly unstored_field_values?: readonly UnstoredFieldValue[];
 }
