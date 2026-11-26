@@ -2,6 +2,19 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.26.0
+
+The values a write could not store as given name one more reason.
+
+### Added
+
+- `UnstoredFieldValue.reason` types `"not_an_allowed_value"`: a value given for
+  a field with allowed values that names none of them, which the write does not
+  store, so the field keeps what it held. A value that names one of them in
+  another case or spacing is stored as that value and is not listed. The README
+  says so, and notes that a structured write giving such a value fails with a
+  400 naming the allowed values.
+
 ## 3.25.1
 
 Wording only. No change to the library's code or types.

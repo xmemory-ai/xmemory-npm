@@ -584,9 +584,10 @@ export interface OrphanedRecord {
 }
 
 /**
- * A value the text gave that its field's type could not hold as given, in a
- * field with no declared format. The write still stored what the field holds
- * for it; this entry says so.
+ * A value the text gave that its field could not hold as given. In a field
+ * with no declared format, the write stored what the field holds for it; in a
+ * field with allowed values, a value that names none of them is not stored.
+ * This entry says so.
  */
 export interface UnstoredFieldValue {
   /** The object type of the record the value was given for. */
@@ -597,13 +598,15 @@ export interface UnstoredFieldValue {
   readonly field: string;
   /**
    * Why it could not be stored as given: `"not_a_number"` (a number field left
-   * empty), `"truncated"` (a whole-number field given a fraction) or
+   * empty), `"truncated"` (a whole-number field given a fraction),
    * `"not_a_boolean"` (a yes/no field given anything else, holding a yes or a
-   * no the text did not state). Widened with `(string & {})` like
+   * no the text did not state) or `"not_an_allowed_value"` (a field with
+   * allowed values given a value that names none of them, which is not stored,
+   * so the field keeps what it held). Widened with `(string & {})` like
    * {@link FieldMergeContradiction.kept}, so a reason a newer server adds is
    * still typed rather than rejected.
    */
-  readonly reason: "not_a_number" | "truncated" | "not_a_boolean" | (string & {});
+  readonly reason: "not_a_number" | "truncated" | "not_a_boolean" | "not_an_allowed_value" | (string & {});
   /** The value as the text gave it, text cut to 300 characters. */
   readonly given: unknown;
   /** What the field holds for it; `null` when nothing was stored. */

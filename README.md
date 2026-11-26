@@ -235,6 +235,10 @@ const result = await inst.write([
 ]);
 ```
 
+A field with allowed values takes one of them: a value naming one in another case
+or spacing is stored as that value, and any other value fails the write with a
+400 whose message names the allowed values.
+
 Continuing the example above, where Bob was created: a relation mutation sets the
 relation's own fields (see [Fields on a relation](#fields-on-a-relation)) in
 `values`. An `update` names one
@@ -468,15 +472,19 @@ links past 100 of one relation into one entry with that relation's `name`, empty
 
 ### Values a write could not store as given
 
-A value the text gave that its field's type cannot hold is still written the
-way the field holds it, and the write says so in
+A value the text gave that its field cannot hold as given is written the way
+the field holds it, or not at all, and the write says so in
 `changes.unstored_field_values` (`UnstoredFieldValue`): a number field given a
 value it can't read as a number is left empty (`"not_a_number"`), a
-whole-number field given a fraction keeps the whole part (`"truncated"`), and a
+whole-number field given a fraction keeps the whole part (`"truncated"`), a
 yes/no field given anything else holds a yes or a no the text didn't state
-(`"not_a_boolean"`). Each entry names the record as the write's other entries
-do, plus `field`, `reason`, `given` (the value as given, text cut to 300
-characters) and `stored` (`null` when nothing was stored):
+(`"not_a_boolean"`), and a field with allowed values given a value that names
+none of them is not written, so it keeps what it held
+(`"not_an_allowed_value"`). A value that names one of them in another case or
+spacing is stored as that value and is not listed. Each entry names the record
+as the write's other entries do, plus `field`, `reason`, `given` (the value as
+given, text cut to 300 characters) and `stored` (`null` when nothing was
+stored):
 
 ```typescript
 const result = await inst.write("Order 17 is for about twenty units.");
@@ -485,9 +493,10 @@ for (const v of result.changes.unstored_field_values ?? []) {
 }
 ```
 
-Only records the write wrote are listed, and a field with a declared format is
-not. The key is omitted when there is none and by a server that predates the
-report. A `reason` a newer server adds is still typed, as a plain string.
+Only records the write wrote are listed, and a value a field with a declared
+format cannot hold is not. The key is omitted when there is none and by a
+server that predates the report. A `reason` a newer server adds is still typed,
+as a plain string.
 
 ### `inst.read(query, options?)` → `ReadResult`
 
