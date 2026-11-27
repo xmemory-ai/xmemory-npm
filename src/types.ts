@@ -607,7 +607,11 @@ export interface UnstoredFieldValue {
    * still typed rather than rejected.
    */
   readonly reason: "not_a_number" | "truncated" | "not_a_boolean" | "not_an_allowed_value" | (string & {});
-  /** The value as the text gave it, text cut to 300 characters. */
+  /**
+   * The value as the text gave it, or, for a value the write itself left out,
+   * the value the write proposed, such as the merged value of two records; text
+   * cut to 300 characters.
+   */
   readonly given: unknown;
   /** What the field holds for it; `null` when nothing was stored. */
   readonly stored: unknown;

@@ -429,7 +429,9 @@ next_steps:
   every fact.
 - If a merge cannot be made, the new value is appended, even past the cap, and
   nothing stored is cut.
-- Only text writes merge. `WriteMutation[]` writes replace the value as given.
+- Only text writes merge. `WriteMutation[]` writes replace the value as the
+  server checks it: a value that names an allowed value in another case, with
+  accents, or with spaces around it is stored as that value.
 - Adding, changing or removing a `merge` is a metadata-only schema change.
 
 Where a merge that changed the field found the new value contradicting the
@@ -476,19 +478,20 @@ links past 100 of one relation into one entry with that relation's `name`, empty
 
 ### Values a write could not store as given
 
-A value the text gave that its field cannot hold as given is written the way
-the field holds it, or not at all, and the write says so in
+A value the text gave that its field cannot hold as given is written the way the
+field holds it, or not at all, and the write says so in
 `changes.unstored_field_values` (`UnstoredFieldValue`): a number field given a
-value it can't read as a number is left empty (`"not_a_number"`), a
-whole-number field given a fraction keeps the whole part (`"truncated"`), a
-yes/no field given anything else holds a yes or a no the text didn't state
+value it can't read as a number is left empty (`"not_a_number"`), a whole-number
+field given a fraction keeps the whole part (`"truncated"`), a yes/no field
+given anything else holds a yes or a no the text didn't state
 (`"not_a_boolean"`), and a field with allowed values given a value that names
 none of them is not written, so it keeps what it held
 (`"not_an_allowed_value"`). A value that names one of them in another case,
 accents or surrounding spaces is stored as that value and is not listed. Each
 entry names the record as the write's other entries do, plus `field`, `reason`,
-`given` (the value as given, text cut to 300 characters) and `stored` (`null`
-when nothing was stored):
+`given` (the value as given, or, for a value the write itself left out, the
+value the write proposed, such as the merged value of two records; text cut to
+300 characters) and `stored` (`null` when nothing was stored):
 
 ```typescript
 const result = await inst.write("Order 17 is for about twenty units.");
