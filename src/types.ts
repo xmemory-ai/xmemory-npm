@@ -671,11 +671,12 @@ export interface WriteChanges {
   /**
    * The values the text gave that their field could not hold as given: one its
    * type cannot hold, or one that names none of its allowed values. One entry
-   * each, for the records the write wrote, and for a value the write itself left
-   * out, such as a bulk update's new value, a rename's new key or a merge's
-   * result, under the record it kept (see {@link UnstoredFieldValue}). Advisory:
-   * the write stored what it stored either way. Omitted by the server when there is none, and by a server that
-   * predates the report, so `undefined` and `[]` both mean "none reported".
+   * each, for the records the write wrote, and for a value the write itself
+   * left out, such as a rename's new key or the merged value of two records
+   * merged into one, under the record it kept (see {@link UnstoredFieldValue}).
+   * Advisory: the write stored what it stored either way. Omitted by the server
+   * when there is none, and by a server that predates the report, so
+   * `undefined` and `[]` both mean "none reported".
    */
   readonly unstored_field_values?: readonly UnstoredFieldValue[];
 }

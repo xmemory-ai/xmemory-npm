@@ -498,12 +498,12 @@ for (const v of result.changes.unstored_field_values ?? []) {
 ```
 
 A value the text gave is listed only for a record the write wrote, and one a
-field with a declared format cannot hold is not listed. A value the write
-itself left out because it names none of the allowed values, such as a bulk
-update's new value, a rename's new key or a merge's result, is listed under the
-record it kept, with the value the field keeps in `stored`. The key is omitted when there is none and
-by a server that predates the report. A `reason` a newer server adds is still
-typed, as a plain string.
+field with a declared format cannot hold is not listed. A value the write itself
+left out because it names none of the allowed values, such as a rename's new key
+or the merged value of two records merged into one, is listed under the record
+it kept, with the value the field keeps in `stored`. The key is omitted when
+there is none and by a server that predates the report. A `reason` a newer
+server adds is still typed, as a plain string.
 
 ### `inst.read(query, options?)` → `ReadResult`
 
