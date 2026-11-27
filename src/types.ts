@@ -584,9 +584,10 @@ export interface OrphanedRecord {
 }
 
 /**
- * A value the text gave that its field's type could not hold as given, in a
- * field with no declared format. The write still stored what the field holds
- * for it; this entry says so.
+ * A value the text gave that its field could not hold as given. In a field
+ * with no declared format, the write stored what the field holds for it; in a
+ * field with allowed values, a value that names none of them is not stored.
+ * This entry says so.
  */
 export interface UnstoredFieldValue {
   /** The object type of the record the value was given for. */
@@ -597,14 +598,20 @@ export interface UnstoredFieldValue {
   readonly field: string;
   /**
    * Why it could not be stored as given: `"not_a_number"` (a number field left
-   * empty), `"truncated"` (a whole-number field given a fraction) or
+   * empty), `"truncated"` (a whole-number field given a fraction),
    * `"not_a_boolean"` (a yes/no field given anything else, holding a yes or a
-   * no the text did not state). Widened with `(string & {})` like
+   * no the text did not state) or `"not_an_allowed_value"` (a field with
+   * allowed values given a value that names none of them, which is not stored,
+   * so the field keeps what it held). Widened with `(string & {})` like
    * {@link FieldMergeContradiction.kept}, so a reason a newer server adds is
    * still typed rather than rejected.
    */
-  readonly reason: "not_a_number" | "truncated" | "not_a_boolean" | (string & {});
-  /** The value as the text gave it, text cut to 300 characters. */
+  readonly reason: "not_a_number" | "truncated" | "not_a_boolean" | "not_an_allowed_value" | (string & {});
+  /**
+   * The value as the text gave it, or, for a value the write itself left out,
+   * the value the write proposed, such as the merged value of two records; text
+   * cut to 300 characters.
+   */
   readonly given: unknown;
   /** What the field holds for it; `null` when nothing was stored. */
   readonly stored: unknown;
@@ -666,11 +673,14 @@ export interface WriteChanges {
    */
   readonly orphaned_records?: readonly OrphanedRecord[];
   /**
-   * The values the text gave that their field's type could not hold as given,
-   * one entry each. Only records the write wrote are listed. Advisory: the
-   * write stored what it stored either way. Omitted by the server when there is
-   * none, and by a server that predates the report, so `undefined` and `[]`
-   * both mean "none reported".
+   * The values the text gave that their field could not hold as given: one its
+   * type cannot hold, or one that names none of its allowed values. One entry
+   * each, for the records the write wrote, and for a value the write itself
+   * left out, such as a rename's new key or the merged value of two records
+   * merged into one, under the record it kept (see {@link UnstoredFieldValue}).
+   * Advisory: the write stored what it stored either way. Omitted by the server
+   * when there is none, and by a server that predates the report, so
+   * `undefined` and `[]` both mean "none reported".
    */
   readonly unstored_field_values?: readonly UnstoredFieldValue[];
 }

@@ -2746,6 +2746,17 @@ function checkClientHeader(label: string, identity: string | undefined): void {
 
   const later: UnstoredFieldValue = { ...unstored[0]!, reason: "some_future_reason", given: 2.5, stored: 2 };
   check("unstored: a reason this release has not heard of is still typed", later.reason === "some_future_reason");
+
+  // The reasons the union names explicitly, without its `(string & {})` widening: each one is offered for completion,
+  // so this line stops compiling if a release drops one of them.
+  type NamedReasons<T> = T extends string ? (string extends T ? never : T) : never;
+  const named: NamedReasons<UnstoredFieldValue["reason"]>[] = [
+    "not_a_number",
+    "truncated",
+    "not_a_boolean",
+    "not_an_allowed_value",
+  ];
+  check("unstored: each reason this release knows is named in the type", named.length === 4);
 }
 
 // ---------------------------------------------------------------------------

@@ -235,6 +235,14 @@ const result = await inst.write([
 ]);
 ```
 
+A field with allowed values takes one of them: a value naming one in another
+case, accents or surrounding spaces is stored as that value, and any other value
+of the field's type that the write would store, a new record's key included,
+fails the write with a 400
+whose message names the allowed values. A `null` still clears the field, a value
+of another type fails as it always has, and a key or `match` that only finds a
+stored record is not checked.
+
 Continuing the example above, where Bob was created: a relation mutation sets the
 relation's own fields (see [Fields on a relation](#fields-on-a-relation)) in
 `values`. An `update` names one
@@ -421,7 +429,9 @@ next_steps:
   every fact.
 - If a merge cannot be made, the new value is appended, even past the cap, and
   nothing stored is cut.
-- Only text writes merge. `WriteMutation[]` writes replace the value as given.
+- Only text writes merge. `WriteMutation[]` writes replace the value as the
+  server checks it: a value that names an allowed value in another case, with
+  accents, or with spaces around it is stored as that value.
 - Adding, changing or removing a `merge` is a metadata-only schema change.
 
 Where a merge that changed the field found the new value contradicting the
@@ -468,15 +478,20 @@ links past 100 of one relation into one entry with that relation's `name`, empty
 
 ### Values a write could not store as given
 
-A value the text gave that its field's type cannot hold is still written the
-way the field holds it, and the write says so in
+A value the text gave that its field cannot hold as given is written the way the
+field holds it, or not at all, and the write says so in
 `changes.unstored_field_values` (`UnstoredFieldValue`): a number field given a
-value it can't read as a number is left empty (`"not_a_number"`), a
-whole-number field given a fraction keeps the whole part (`"truncated"`), and a
-yes/no field given anything else holds a yes or a no the text didn't state
-(`"not_a_boolean"`). Each entry names the record as the write's other entries
-do, plus `field`, `reason`, `given` (the value as given, text cut to 300
-characters) and `stored` (`null` when nothing was stored):
+value it can't read as a number is left empty (`"not_a_number"`), a whole-number
+field given a fraction keeps the whole part (`"truncated"`), a yes/no field
+given anything else holds a yes or a no the text didn't state
+(`"not_a_boolean"`), and a field with allowed values given a value that names
+none of them is not written, so it keeps what it held
+(`"not_an_allowed_value"`). A value that names one of them in another case,
+accents or surrounding spaces is stored as that value and is not listed. Each
+entry names the record as the write's other entries do, plus `field`, `reason`,
+`given` (the value as given, or, for a value the write itself left out, the
+value the write proposed, such as the merged value of two records; text cut to
+300 characters) and `stored` (`null` when nothing was stored):
 
 ```typescript
 const result = await inst.write("Order 17 is for about twenty units.");
@@ -485,9 +500,13 @@ for (const v of result.changes.unstored_field_values ?? []) {
 }
 ```
 
-Only records the write wrote are listed, and a field with a declared format is
-not. The key is omitted when there is none and by a server that predates the
-report. A `reason` a newer server adds is still typed, as a plain string.
+A value the text gave is listed only for a record the write wrote, and one a
+field with a declared format cannot hold is not listed. A value the write itself
+left out because it names none of the allowed values, such as a rename's new key
+or the merged value of two records merged into one, is listed under the record
+it kept, with the value the field keeps in `stored`. The key is omitted when
+there is none and by a server that predates the report. A `reason` a newer
+server adds is still typed, as a plain string.
 
 ### `inst.read(query, options?)` → `ReadResult`
 
