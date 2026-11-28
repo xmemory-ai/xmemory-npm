@@ -10,7 +10,7 @@ export type { AdminNamespace } from "./client.js";
 export { DescribeResult, InstanceHandle } from "./instance.js";
 
 // Error classes
-export { XmemoryAPIError, XmemoryHealthCheckError } from "./types.js";
+export { WriteRejectedError, XmemoryAPIError, XmemoryHealthCheckError } from "./types.js";
 
 // Enums
 export { SchemaType } from "./types.js";
@@ -79,6 +79,7 @@ export type {
   OrphanedRecord,
   UnstoredFieldValue,
   AsyncWriteResult,
+  WriteError,
   WriteStatusResult,
   ExtractResult,
   GenerateSchemaResult,

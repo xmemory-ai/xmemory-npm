@@ -3,6 +3,7 @@
  */
 
 import { InstanceHandle } from "./instance.js";
+import { serializeBody } from "./rawJson.js";
 import {
   type AgentSetupResult,
   type ApiError,
@@ -30,6 +31,7 @@ import {
   type UpdateInstanceMetadataOptions,
   type UpdateInstanceSchemaOptions,
   type XmemoryClientOptions,
+  WriteRejectedError,
   XmemoryAPIError,
   XmemoryHealthCheckError,
   buildInstanceSchema,
@@ -66,6 +68,42 @@ function own(source: unknown, key: string): unknown {
 function ownArray(source: unknown, key: string): unknown[] {
   const value = own(source, key);
   return Array.isArray(value) ? value : [];
+}
+
+/**
+ * The write calls, whose `VALIDATION_ERROR` throws {@link WriteRejectedError}. Not `write_status`: it answers
+ * `VALIDATION_ERROR` for a malformed write id, and reports a failed write in the status's `error`.
+ */
+const WRITE_PATH = /\/write(?:_async)?$/;
+
+/**
+ * The error to throw for a failed call to `path`: a {@link WriteRejectedError}
+ * for a write the server answered with `VALIDATION_ERROR`, carrying
+ * `details.rejection` when that is an object; an {@link XmemoryAPIError}
+ * otherwise.
+ */
+function apiError(
+  message: string,
+  path: string,
+  status: number,
+  code: string | undefined,
+  details: Record<string, unknown> | null | undefined,
+  retryAfter: number | undefined,
+): XmemoryAPIError {
+  if (code === "VALIDATION_ERROR" && WRITE_PATH.test(path)) {
+    const rejection = own(details, "rejection");
+    return new WriteRejectedError(
+      message,
+      status,
+      code,
+      details,
+      retryAfter,
+      typeof rejection === "object" && rejection !== null && !Array.isArray(rejection)
+        ? (rejection as Record<string, unknown>)
+        : undefined,
+    );
+  }
+  return new XmemoryAPIError(message, status, code, details, retryAfter);
 }
 const DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -414,7 +452,7 @@ export class XmemoryClient {
     const hasBody = !!(options?.body && method !== "GET");
     const init: FetchInit = { method, headers: this._headers(hasBody) };
     if (hasBody) {
-      init.body = JSON.stringify(options!.body);
+      init.body = serializeBody(options!.body);
     }
 
     const res = await this._fetch(url, init, timeoutMs);
@@ -434,8 +472,9 @@ export class XmemoryClient {
         (typeof payload === "object" && payload !== null && "message" in payload
           ? String((payload as { message: string }).message)
           : raw.slice(0, 200));
-      throw new XmemoryAPIError(
+      throw apiError(
         `HTTP ${res.status}: ${msg}`,
+        path,
         res.status,
         structured.code,
         structured.details,
@@ -463,8 +502,9 @@ export class XmemoryClient {
     const responseErrors = ownArray(response, "errors");
     if (responseErrors.length > 0) {
       const first = responseErrors[0] as ApiError;
-      throw new XmemoryAPIError(
+      throw apiError(
         `API error: ${first.message} (${first.code})`,
+        path,
         res.status,
         first.code,
         first.details ?? null,
@@ -484,7 +524,12 @@ export class XmemoryClient {
     if (items.length > 1) {
       throw new XmemoryAPIError(`Expected one item from ${method} ${path}, got ${items.length}`);
     }
-    return items[0] as T;
+    const item = items[0];
+    if (options?.envelopeWarnings && typeof item === "object" && item !== null && !Object.hasOwn(item, "warnings")) {
+      // A write's notes ride the response, beside its one item.
+      return { ...item, warnings: ownArray(response, "warnings") } as T;
+    }
+    return item as T;
   }
 
   private async _requestList<T>(method: string, path: string, options?: InternalRequestOptions): Promise<T[]> {

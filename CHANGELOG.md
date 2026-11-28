@@ -2,6 +2,49 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.26.0
+
+Schema text sent as XMD when it is XMD, and typed write refusals.
+
+### Added
+
+- `WriteRejectedError`, a subclass of `XmemoryAPIError`, thrown by `write` and
+  `writeAsync` when the server answers with `VALIDATION_ERROR`. Its `rejection` holds the server's structured details of
+  the refused write when the response carries them, as a plain object, and is
+  `undefined` otherwise. It keeps `XmemoryAPIError`'s `name`.
+- `warnings` on `WriteResult`, `AsyncWriteResult` and `WriteStatusResult`: the
+  notes the server attached to the write, empty when it sent none.
+- `WriteStatusResult.error`, a `WriteError`: a failed write's `code` and
+  `message`, and in `rejection` the server's details when it sends them.
+  `null` while the write has not failed, and on a failed write the server
+  stored no code for; `error_detail` is unchanged.
+
+### Changed
+
+- An XMD schema written as JSON (a JSON object whose every top-level key is
+  one an XMD schema has: `xmd_version`, `title`, `description`, `objects`,
+  `relations`, with an `xmd_version` key or with `objects` whose values are
+  objects, at least one of them with `fields`) passed as `SchemaType.JSON` is sent as
+  XMD by `createInstance`, `updateInstanceSchema` and `dryRunMigration`, as the
+  object it is, its text written into the request as it is, so every value
+  reaches the schema as JSON gave it, each number by its own token. Text passed
+  as `SchemaType.YML` is sent as YML text, as before.
+- `WriteResult.warnings`, `AsyncWriteResult.warnings`, `WriteStatusResult.error`
+  and `WriteStatusResult.warnings` are optional in the types, and `write`,
+  `writeAsync` and `writeStatus` keep their signatures, so values and subclasses
+  typed against earlier versions still compile; the three always set them, a
+  request adapter of the caller's own included.
+- A failed `writeStatus`'s `error` keeps every field the server sent, such as a
+  quota failure's `details.kind` and `resource_id`, beside its `rejection`.
+- `write`, `writeAsync` and `extract` send `extraction_logic` only when you pass
+  `extractionLogic`, where they sent `"fast"` by default before.
+
+### Deprecated
+
+- JSON Schema input: any other text passed as `SchemaType.JSON` is still sent as
+  JSON Schema, and the call emits a `DeprecationWarning` in Node. Send an XMD
+  schema (`SchemaType.YML`) instead.
+
 ## 3.25.1
 
 Wording only. No change to the library's code or types.

@@ -4,6 +4,7 @@ import {
   AgentSurface,
   BindingTier,
   XmemoryClient,
+  WriteRejectedError,
   XmemoryAPIError,
   XmemoryHealthCheckError,
   SetupFormat,
@@ -21,6 +22,12 @@ import {
   type ReadResult,
   type UnstoredFieldValue,
   type WriteMutation,
+  type AsyncWriteResult,
+  type WriteResult,
+  type WriteStatusResult,
+  type WriteOptions,
+  type RequestOptions,
+  type WriteError,
 } from "./src/index.js";
 import { CLIENT_HEADER, buildClientIdentity, withClientHeader } from "./src/client.js";
 import { VERSION } from "./src/version.js";
@@ -1378,14 +1385,16 @@ async function captureRequest(
   fn: (c: XmemoryClient) => Promise<unknown>,
   item: Record<string, unknown> = INSTANCE_ITEM,
   url = "http://localhost:1",
-): Promise<{ method: string; body: Record<string, unknown>; url: string }> {
+): Promise<{ method: string; body: Record<string, unknown>; url: string; raw: string }> {
   const origFetch = globalThis.fetch;
-  let captured = { method: "", body: {} as Record<string, unknown>, url: "" };
+  let captured = { method: "", body: {} as Record<string, unknown>, url: "", raw: "" };
   globalThis.fetch = mockFetch((requestUrl, init) => {
     captured = {
       method: init?.method ?? "",
       body: init?.body ? JSON.parse(init.body as string) : {},
       url: String(requestUrl),
+      // The body as sent, before a parse here reads its numbers as JavaScript would.
+      raw: init?.body ? String(init.body) : "",
     };
     return { status: 200, body: { items: [item] } };
   });
@@ -2821,6 +2830,445 @@ function checkClientHeader(label: string, identity: string | undefined): void {
     "patch sends no epoch guard unless given one",
     JSON.stringify(unguarded.body) === JSON.stringify({ agent_owner_instructions: "Prefer updating an existing record." }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Schema input: XMD written as JSON goes as XMD; JSON Schema goes as before and warns
+// ---------------------------------------------------------------------------
+
+{
+  const XMD_AS_JSON = JSON.stringify({ objects: { Gadget: { fields: { label: { type: "str" } }, primary_key: ["label"] } } });
+  const JSON_SCHEMA = JSON.stringify({ type: "object", properties: { label: { type: "string" } }, required: ["label"] });
+  const DEPRECATED = "JSON Schema input is deprecated: send an XMD schema (SchemaType.YML) instead.";
+  const emitted: unknown[][] = [];
+  const origEmit = process.emitWarning;
+  process.emitWarning = ((...args: unknown[]) => {
+    emitted.push(args);
+  }) as typeof process.emitWarning;
+  try {
+    const sent = async (fn: (c: XmemoryClient) => Promise<unknown>) =>
+      JSON.stringify((await captureRequest(fn)).body.instance_schema);
+    const asXmd = (text: string) => JSON.stringify({ yml: { value: text } });
+    const asXmdObject = (text: string) => JSON.stringify({ yml: { value: JSON.parse(text) } });
+    const asJsonSchema = (text: string) => JSON.stringify({ json_schema: { value: text } });
+
+    emitted.length = 0;
+    check(
+      "XMD written as JSON is sent as XMD under SchemaType.JSON, as the parsed object",
+      (await sent((c) => c.admin.createInstance("c", "n", XMD_AS_JSON, SchemaType.JSON))) === asXmdObject(XMD_AS_JSON),
+    );
+    check("XMD written as JSON warns nothing", emitted.length === 0);
+    check(
+      "text named YML is sent as YML text, whatever it holds",
+      (await sent((c) => c.admin.createInstance("c", "n", XMD_AS_JSON, SchemaType.YML))) === asXmd(XMD_AS_JSON),
+    );
+    check(
+      "the schema update sends XMD written as JSON as the parsed object",
+      (await sent((c) => c.admin.updateInstanceSchema("i", XMD_AS_JSON, SchemaType.JSON))) ===
+        asXmdObject(XMD_AS_JSON),
+    );
+    check(
+      "the dry run sends XMD written as JSON as the parsed object",
+      (await sent((c) => c.admin.dryRunMigration("i", XMD_AS_JSON, SchemaType.JSON))) === asXmdObject(XMD_AS_JSON),
+    );
+    check("none of them warns", emitted.length === 0);
+
+    // A value YAML would read otherwise: a float default JSON writes with an exponent, and a string default holding a
+    // character YAML folds. Both reach the schema as JSON gave them.
+    const EXACT = '{"objects": {"Gauge": {"fields": {"reading": {"type": "float", "default": 1e-7}, ' +
+      '"note": {"type": "str", "default": "a\u0085b"}}, "primary_key": ["note"]}}}';
+    const exact = (await captureRequest((c) => c.admin.createInstance("c", "n", EXACT, SchemaType.JSON))).body
+      .instance_schema as { yml?: { value?: unknown } };
+    const value = exact.yml?.value;
+    const fields =
+      typeof value === "object" && value !== null
+        ? (value as { objects: { Gauge: { fields: Record<string, { default: unknown }> } } }).objects.Gauge.fields
+        : undefined;
+    check("a float default reaches the schema as a number", fields?.reading.default === 1e-7);
+    check("a string default reaches the schema unchanged", fields?.note.default === "a\u0085b");
+
+    // Each number reaches the request by the token the text gives it: a float written `1.0` stays a float, and an
+    // integer past 2^53 stays exact, which JavaScript's own numbers would not keep.
+    const TOKENS =
+      '{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}, ' +
+      '"serial": {"type": "int", "default": 9007199254740993}}, "primary_key": ["serial"]}}}';
+    for (const [name, call] of [
+      ["createInstance", (c: XmemoryClient) => c.admin.createInstance("c", "n", TOKENS, SchemaType.JSON)],
+      ["updateInstanceSchema", (c: XmemoryClient) => c.admin.updateInstanceSchema("i", TOKENS, SchemaType.JSON)],
+      ["dryRunMigration", (c: XmemoryClient) => c.admin.dryRunMigration("i", TOKENS, SchemaType.JSON)],
+    ] as const) {
+      const { raw } = await captureRequest(call);
+      check(`${name} sends a float default written 1.0 as 1.0`, raw.includes('"weight": {"type": "float", "default": 1.0}'));
+      check(`${name} sends an integer default past 2^53 exactly`, raw.includes('"default": 9007199254740993}'));
+    }
+
+    // A JSON Schema may use `objects` as an annotation of its own: its root keywords keep it a JSON Schema, even
+    // beside object types shaped as XMD's, and so does an `objects` shaped as no XMD object types are.
+    const xmdObjects = (JSON.parse(XMD_AS_JSON) as { objects: Record<string, unknown> }).objects;
+    // Each of JSON Schema's root keywords, alone beside object types shaped as XMD's: that keyword alone decides.
+    const keywords: [string, unknown][] = [
+      ["$schema", "https://json-schema.org/draft/2020-12/schema"],
+      ["$id", "https://example.com/gadget.schema.json"],
+      ["type", "object"],
+      ["properties", { label: { type: "string" } }],
+      ["$defs", { gadget: { type: "object" } }],
+      ["definitions", { gadget: { type: "object" } }],
+      ["allOf", [{ type: "object" }]],
+      ["anyOf", [{ type: "object" }]],
+      ["oneOf", [{ type: "object" }]],
+      ["not", { type: "array" }],
+      ["$ref", "#/$defs/gadget"],
+      ["if", { required: ["label"] }],
+      ["then", { required: ["label"] }],
+      ["else", { required: ["label"] }],
+      ["patternProperties", { "^customer_": { type: "object", properties: { email: { type: "string" } } } }],
+    ];
+    const annotated: [string, Record<string, unknown>][] = [
+      [
+        "`properties` beside `objects`",
+        { type: "object", properties: { label: { type: "string" } }, objects: { source: "CRM" } },
+      ],
+      [
+        "`$schema` and `type` beside `objects`",
+        { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", objects: {} },
+      ],
+      ...keywords.map(([keyword, value]): [string, Record<string, unknown>] => [
+        `\`${keyword}\` beside object types shaped as XMD's`,
+        { [keyword]: value, objects: xmdObjects },
+      ]),
+      ["`objects` holding no object types", { objects: { source: "CRM" } }],
+      ["`objects` whose types have no `fields`", { objects: { Gadget: { label: "an object without fields" } } }],
+      ["an empty `objects`", { objects: {} }],
+      ["neither `objects` nor a keyword", { title: "Gadget" }],
+      ["`objects` mixing an object type and a string", { objects: { ...xmdObjects, source: "CRM" } }],
+    ];
+    for (const [label, document] of annotated) {
+      const text = JSON.stringify(document);
+      emitted.length = 0;
+      check(
+        `a JSON Schema with ${label} is sent as json_schema`,
+        (await sent((c) => c.admin.createInstance("c", "n", text, SchemaType.JSON))) === asJsonSchema(text),
+      );
+      check(`a JSON Schema with ${label} warns once`, emitted.length === 1);
+    }
+
+    // An `xmd_version` signs XMD, and so does one object type with `fields`: an object still missing its `fields`
+    // gets XMD's own error for that object, not the JSON Schema converter's.
+    const signed: [string, Record<string, unknown>][] = [
+      ["`xmd_version`", { xmd_version: "v1", objects: {} }],
+      ["one object type with `fields`", { objects: { ...xmdObjects, Widget: { description: "Fields to come." } } }],
+    ];
+    for (const [label, document] of signed) {
+      const text = JSON.stringify(document);
+      emitted.length = 0;
+      check(
+        `XMD signed by ${label} is sent as XMD, as the parsed object`,
+        (await sent((c) => c.admin.createInstance("c", "n", text, SchemaType.JSON))) === asXmdObject(text),
+      );
+      check(`XMD signed by ${label} warns nothing`, emitted.length === 0);
+    }
+
+    emitted.length = 0;
+    check(
+      "a JSON Schema is still sent as json_schema",
+      (await sent((c) => c.admin.createInstance("c", "n", JSON_SCHEMA, SchemaType.JSON))) === asJsonSchema(JSON_SCHEMA),
+    );
+    check(
+      "a JSON Schema warns once, as a DeprecationWarning",
+      emitted.length === 1 && emitted[0][0] === DEPRECATED && emitted[0][1] === "DeprecationWarning",
+    );
+
+    emitted.length = 0;
+    check(
+      "text that is not JSON, named JSON, is sent as json_schema as before",
+      (await sent((c) => c.admin.createInstance("c", "n", "not json at all", SchemaType.JSON))) ===
+        asJsonSchema("not json at all"),
+    );
+    check("and warns", emitted.length === 1);
+
+    emitted.length = 0;
+    check(
+      "YML text is sent as before",
+      (await sent((c) => c.admin.createInstance("c", "n", "objects: {}", SchemaType.YML))) === asXmd("objects: {}"),
+    );
+    check("YML text warns nothing", emitted.length === 0);
+  } finally {
+    process.emitWarning = origEmit;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A write refused with VALIDATION_ERROR throws WriteRejectedError
+// ---------------------------------------------------------------------------
+
+{
+  // A rejection object with invented keys and values: the library passes it on as it is.
+  const REJECTION = { summary: "An invented summary.", entries: [{ kind: "invented", label: "Gizmo" }] };
+  const refusal = (code: string, details?: Record<string, unknown>) => ({
+    errors: [{ code, message: "An invented refusal.", ...(details ? { details } : {}) }],
+  });
+  async function caught(status: number, body: unknown, fn: (c: XmemoryClient) => Promise<unknown>): Promise<unknown> {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch(() => ({ status, body }));
+    try {
+      await fn(new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }));
+      return undefined;
+    } catch (e) {
+      return e;
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  }
+
+  for (const status of [400, 200]) {
+    const e = await caught(status, refusal("VALIDATION_ERROR", { rejection: REJECTION }), (c) =>
+      c.instance("i").write("A teal gadget."),
+    );
+    check(`write refused (${status}): WriteRejectedError`, e instanceof WriteRejectedError);
+    check(`write refused (${status}): still an XmemoryAPIError`, e instanceof XmemoryAPIError);
+    check(
+      `write refused (${status}): code and rejection`,
+      e instanceof WriteRejectedError &&
+        e.code === "VALIDATION_ERROR" &&
+        e.message.includes("An invented refusal.") &&
+        JSON.stringify(e.rejection) === JSON.stringify(REJECTION),
+    );
+  }
+  const bare = await caught(400, refusal("VALIDATION_ERROR"), (c) => c.instance("i").write("A teal gadget."));
+  check("write refused without a rejection: WriteRejectedError", bare instanceof WriteRejectedError);
+  check(
+    "write refused without a rejection: rejection undefined",
+    bare instanceof WriteRejectedError && bare.rejection === undefined,
+  );
+  const queued = await caught(400, refusal("VALIDATION_ERROR", { rejection: REJECTION }), (c) =>
+    c.instance("i").writeAsync("A teal gadget."),
+  );
+  check("writeAsync refused: WriteRejectedError", queued instanceof WriteRejectedError);
+  // writeStatus answers VALIDATION_ERROR for a malformed write id: no write was refused.
+  const polled = await caught(400, refusal("VALIDATION_ERROR"), (c) => c.instance("i").writeStatus("w-malformed"));
+  check(
+    "a status poll for a malformed write id throws what it threw before",
+    polled instanceof XmemoryAPIError && !(polled instanceof WriteRejectedError) && polled.code === "VALIDATION_ERROR",
+  );
+  const quota = await caught(429, refusal("QUOTA_EXCEEDED"), (c) => c.instance("i").write("A teal gadget."));
+  check(
+    "a write failing with another code throws what it threw before",
+    quota instanceof XmemoryAPIError && !(quota instanceof WriteRejectedError) && quota.code === "QUOTA_EXCEEDED",
+  );
+  const notWrite = await caught(400, refusal("VALIDATION_ERROR"), (c) =>
+    c.admin.createInstance("c", "n", "objects: {}", SchemaType.YML),
+  );
+  check(
+    "VALIDATION_ERROR on a call that is no write throws what it threw before",
+    notWrite instanceof XmemoryAPIError && !(notWrite instanceof WriteRejectedError),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Warnings on write results, and a failed write's error on writeStatus
+// ---------------------------------------------------------------------------
+
+{
+  const NOTES = [{ code: "NOTE", message: "An invented note.", field: "text" }];
+  async function answered<T>(body: unknown, fn: (c: XmemoryClient) => Promise<T>): Promise<T> {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch(() => ({ status: 200, body }));
+    try {
+      return await fn(new XmemoryClient({ url: "http://localhost:1", apiKey: "t" }));
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  }
+  const item = { write_id: "w-1" };
+  const written = await answered({ items: [item], warnings: NOTES }, (c) => c.instance("i").write("A teal gadget."));
+  check("write carries the response's warnings", JSON.stringify(written.warnings) === JSON.stringify(NOTES));
+  const plain = await answered({ items: [item] }, (c) => c.instance("i").write("A teal gadget."));
+  check("write carries no warnings when the response has none", Array.isArray(plain.warnings) && plain.warnings.length === 0);
+  const queued = await answered({ items: [item], warnings: NOTES }, (c) => c.instance("i").writeAsync("A teal gadget."));
+  check("writeAsync carries the response's warnings", JSON.stringify(queued.warnings) === JSON.stringify(NOTES));
+  const dryRun = await answered(
+    { items: [{ instance_id: "i", current_version: 1, warnings: [] }], warnings: NOTES },
+    (c) => c.admin.dryRunMigration("i", "objects: {}", SchemaType.YML),
+  );
+  check("a call that is no write keeps its own warnings", JSON.stringify(dryRun.warnings) === "[]");
+
+  const statusOf = (extra: Record<string, unknown>) =>
+    answered({ items: [{ write_id: "w-1", write_status: "failed", error_detail: "An invented refusal.", ...extra }] }, (c) =>
+      c.instance("i").writeStatus("w-1"),
+    );
+  const withRejection = await statusOf({
+    error: { code: "VALIDATION_ERROR", message: "An invented refusal.", details: { rejection: { summary: "An invented summary." } } },
+  });
+  check(
+    "a failed status carries the write's error and its rejection",
+    withRejection.error?.code === "VALIDATION_ERROR" &&
+      withRejection.error.message === "An invented refusal." &&
+      JSON.stringify(withRejection.error.rejection) === JSON.stringify({ summary: "An invented summary." }) &&
+      withRejection.error_detail === "An invented refusal.",
+  );
+  const withoutRejection = await statusOf({ error: { code: "VALIDATION_ERROR", message: "An invented refusal." } });
+  check(
+    "a failed status without details carries its error, rejection undefined",
+    withoutRejection.error?.code === "VALIDATION_ERROR" && withoutRejection.error.rejection === undefined,
+  );
+  const completed = await answered({ items: [{ write_id: "w-1", write_status: "completed", warnings: NOTES }] }, (c) =>
+    c.instance("i").writeStatus("w-1"),
+  );
+  check("a completed status has no error", completed.error === null);
+  check("writeStatus carries its item's warnings", JSON.stringify(completed.warnings) === JSON.stringify(NOTES));
+  const bareStatus = await answered({ items: [{ write_id: "w-1", write_status: "queued" }] }, (c) =>
+    c.instance("i").writeStatus("w-1"),
+  );
+  check(
+    "writeStatus carries no warnings when it has none",
+    Array.isArray(bareStatus.warnings) && bareStatus.warnings.length === 0,
+  );
+
+  // A failed status keeps its error's own fields beside its rejection: a quota failure's kind and resource.
+  const quotaFailed = await answered(
+    {
+      items: [
+        {
+          write_id: "w-1",
+          write_status: "failed",
+          error: {
+            code: "QUOTA_EXCEEDED",
+            message: "An invented quota.",
+            details: { kind: "daily" },
+            resource_id: "r-1",
+          },
+        },
+      ],
+    },
+    (c) => c.instance("i").writeStatus("w-1"),
+  );
+  check("a failed status keeps its error's details", quotaFailed.error?.details?.kind === "daily");
+  const plainFailed = await answered(
+    {
+      items: [
+        {
+          write_id: "w-1",
+          write_status: "failed",
+          error: { code: "EXTRACTION_FAILED", message: "An invented failure.", details: null },
+        },
+      ],
+    },
+    (c) => c.instance("i").writeStatus("w-1"),
+  );
+  check(
+    "a failed status keeps details the server sent as null",
+    plainFailed.error?.details === null && plainFailed.error?.rejection === undefined,
+  );
+  check("a failed status keeps its error's other fields", quotaFailed.error?.resource_id === "r-1");
+
+  // Envelope warnings reach only the write calls: another call's result gains no `warnings`.
+  const cluster = await answered({ items: [{ id: "c", name: "n" }], warnings: NOTES }, (c) => c.admin.getCluster("c"));
+  check("another call's result gains no warnings", !("warnings" in (cluster as object)));
+}
+
+// Values typed against the shapes before 3.26, with no `warnings` or `error`, still compile.
+{
+  const legacyQueued: AsyncWriteResult = { write_id: "w-1", trace_id: null, console_url: null };
+  const legacyStatus: WriteStatusResult = {
+    write_id: "w-1",
+    write_status: "queued",
+    console_url: null,
+    error_detail: null,
+    completed_at: null,
+  };
+  const legacyWritten: Omit<WriteResult, "changes"> = { write_id: "w-1", trace_id: null, console_url: null };
+  check("results typed before 3.26 still compile", [legacyQueued, legacyStatus, legacyWritten].length === 3);
+}
+
+// ---------------------------------------------------------------------------
+// extraction_logic is sent only when the caller gives one
+// ---------------------------------------------------------------------------
+
+{
+  const sentOf = async (fn: (c: XmemoryClient) => Promise<unknown>) => (await captureRequest(fn, { write_id: "w-1" })).body;
+  const write = await sentOf((c) => c.instance("i").write("A teal gadget."));
+  check("a default write sends no extraction_logic", !("extraction_logic" in write));
+  const queued = await sentOf((c) => c.instance("i").writeAsync("A teal gadget."));
+  check("a default writeAsync sends no extraction_logic", !("extraction_logic" in queued));
+  const extracted = await sentOf((c) => c.instance("i").extract("A teal gadget."));
+  check("a default extract sends no extraction_logic", !("extraction_logic" in extracted));
+  // Each call sends the extraction_logic it is given, either literal, as it is: a "fast" sent is what a server warns on.
+  for (const given of ["deep", "fast"] as const) {
+    const options = { extractionLogic: given };
+    const written = await sentOf((c) => c.instance("i").write("A teal gadget.", options));
+    check(`a write sends the extraction_logic "${given}" it is given`, written.extraction_logic === given);
+    const queuedGiven = await sentOf((c) => c.instance("i").writeAsync("A teal gadget.", options));
+    check(`a writeAsync sends the extraction_logic "${given}" it is given`, queuedGiven.extraction_logic === given);
+    const extractedGiven = await sentOf((c) => c.instance("i").extract("A teal gadget.", options));
+    check(`an extract sends the extraction_logic "${given}" it is given`, extractedGiven.extraction_logic === given);
+  }
+}
+
+{
+  // A body with no schema is JSON.stringify's, each field read once: a getter in a structured write's values is read
+  // once, as before, and its value sent.
+  let reads = 0;
+  const values = {
+    get name(): string {
+      reads += 1;
+      return "Alice";
+    },
+  };
+  const mutations: WriteMutation[] = [
+    { object_mutation: { object_type: "person", create: { key: { email: "a@x.io" }, values } } },
+  ];
+  const { body } = await captureRequest((c) => c.instance("i").write(mutations), { write_id: "w-1" });
+  const sentMutations = body.structured_mutations as { object_mutation: { create: { values: { name: string } } } }[];
+  check("a structured write reads a value's getter once", reads === 1);
+  check("a structured write sends the getter's value", sentMutations[0]?.object_mutation.create.values.name === "Alice");
+
+  // The schema's text goes at instance_schema's own place, so no field of the body can take it: a name that reads like
+  // the placeholder an earlier draft used stays the name.
+  const lookalike = "\u0000raw-json-0\u0000";
+  const schemaText = '{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}}}}}';
+  const created = await captureRequest((c) => c.admin.createInstance("c", lookalike, schemaText, SchemaType.JSON));
+  check("a name that reads like a placeholder stays the name", created.body.name === lookalike);
+  check("the schema keeps its own place beside such a name", created.raw.includes('"value":{"objects": {"Gauge"'));
+
+  // `details` takes the null the server sends for a failed write with none.
+  const noDetails: WriteError["details"] = null;
+  check("a WriteError's details can be null", noDetails === null);
+}
+
+// ---------------------------------------------------------------------------
+// The handle's methods and errors keep their 3.25.1 shapes
+// ---------------------------------------------------------------------------
+
+// A subclass typed against 3.25.1's results compiles: the methods keep those signatures.
+class LegacyHandle extends InstanceHandle {
+  override async write(text: string, options?: WriteOptions): Promise<WriteResult>;
+  override async write(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<WriteResult>;
+  override async write(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<WriteResult> {
+    return typeof input === "string" ? super.write(input, options) : super.write(input, options);
+  }
+
+  override async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult>;
+  override async writeAsync(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<AsyncWriteResult>;
+  override async writeAsync(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<AsyncWriteResult> {
+    return typeof input === "string" ? super.writeAsync(input, options) : super.writeAsync(input, options);
+  }
+
+  override async writeStatus(writeId: string, options?: RequestOptions): Promise<WriteStatusResult> {
+    return super.writeStatus(writeId, options);
+  }
+}
+
+{
+  // A request adapter of the caller's own that leaves `warnings` out: the methods still set them, empty.
+  const adapter = (async () => ({ write_id: "w-1" })) as unknown as ConstructorParameters<typeof InstanceHandle>[1];
+  const handle = new LegacyHandle("i", adapter);
+  const written = await handle.write("A teal gadget.");
+  check("a write through a caller's own adapter has its warnings set", written.warnings?.length === 0);
+  const queued = await handle.writeAsync("A teal gadget.");
+  check("a writeAsync through a caller's own adapter has its warnings set", queued.warnings?.length === 0);
+  // Code that tells this SDK's errors by name, as across its CommonJS and ES module builds, still tells this one.
+  const refused = new WriteRejectedError("Refused.", 400, "VALIDATION_ERROR");
+  check("a refused write's error keeps XmemoryAPIError's name", refused.name === "XmemoryAPIError");
 }
 
 // ---------------------------------------------------------------------------

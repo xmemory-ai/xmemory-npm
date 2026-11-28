@@ -96,6 +96,20 @@ const schema = await xm.admin.getInstanceSchema(instanceId);
 await xm.admin.updateInstanceSchema(instanceId, newYml, SchemaType.YML);
 ```
 
+Schema text is XMD, as YAML or as JSON with the same keys. `createInstance`,
+`updateInstanceSchema` and `dryRunMigration` send text passed as
+`SchemaType.JSON` as XMD when its top level is a JSON object whose every key
+is one an XMD schema has (`xmd_version`, `title`, `description`, `objects`,
+`relations`), with an `xmd_version` key or with `objects` whose values are
+objects, at least one of them with `fields`. That text goes into the request as it
+is, so every value reaches the schema as JSON gave it, each number by its own
+token: `1.0` stays a float, and an integer past 2^53 stays exact. Text passed as
+`SchemaType.YML` is sent unchanged, for the server to read as YAML, which
+refuses JSON indented with tabs: pass XMD written as JSON as `SchemaType.JSON`.
+Any other text passed as `SchemaType.JSON` is sent as JSON Schema, which is
+deprecated: the call emits a `DeprecationWarning` (in Node), and you should send
+an XMD schema instead.
+
 ### Generate schema
 
 ```typescript
@@ -210,8 +224,10 @@ Every data operation — `read`, `write`, `writeAsync`, `writeStatus`, `extract`
 `console_url`, the deep link to that call's trace. It is per operation rather than per
 record, and `null` when the server has no console configured.
 
-Options: `{ extractionLogic?, scope?, timeoutMs? }` — `extractionLogic`
-defaults to `"fast"`; see [Scoped writes](#scoped-writes) for `scope` and its `mode`.
+Options: `{ extractionLogic?, scope?, timeoutMs? }`. Every text write uses deep
+extraction; one sent `extractionLogic: "fast"` notes this in its `warnings`. A
+structured write, below, does no extraction.
+See [Scoped writes](#scoped-writes) for `scope` and its `mode`.
 
 Or pass a `WriteMutation[]` for **structured writes** — deterministic, LLM-free
 create/update/delete mutations applied in array order (later mutations may
@@ -303,6 +319,18 @@ did — and where a [scoped write](#scoped-writes) in `"drop"` mode reports what
 left out, a [field merge](#mergeable-text-fields) what it chose between, and a
 [delete](#records-a-delete-left-without-a-link) the records it left without a link.
 A status for a write that has not finished carries none, so the field is optional.
+
+A failed write's status carries `error`, a `WriteError`: its `code` and
+`message` are the failed write's, and its `rejection` holds the server's
+details when it sends them (`undefined` otherwise). `error` is `null` while the
+write has not failed, and can be `null` on a failed write the server stored no
+code for: read `error_detail` then, which is unchanged.
+
+### Warnings on a write
+
+`write` and `writeAsync` results, and `writeStatus`, carry `warnings`: the
+notes the server attached to the write, each an object with `code` and
+`message` as the server sent it. The array is empty when it sent none.
 
 ### Write ordering
 
@@ -974,6 +1002,24 @@ through, counted as a generic caller.
 ## Error handling
 
 All errors throw `XmemoryAPIError`. Health check failures throw `XmemoryHealthCheckError` (a subclass).
+A write the server answers with `VALIDATION_ERROR` throws `WriteRejectedError`
+(a subclass too) from `write` and `writeAsync`. It keeps `XmemoryAPIError`'s
+`name`, so code that tells this SDK's errors by name still does: tell it apart by
+`instanceof WriteRejectedError`. Its `rejection`
+holds the server's structured details of the refused write when the response
+carries them, as a plain object, and is `undefined` otherwise:
+
+```typescript
+import { WriteRejectedError } from "xmemory";
+
+try {
+  await inst.write("Order 17 is for twenty units.");
+} catch (e) {
+  if (e instanceof WriteRejectedError) {
+    console.error(e.code, e.message, e.rejection);
+  }
+}
+```
 
 ```typescript
 import { XmemoryClient, XmemoryAPIError, XmemoryHealthCheckError } from "xmemory";

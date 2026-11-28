@@ -2,6 +2,8 @@
  * Types, enums, and error classes for the xmemory API.
  */
 
+import { RawJson } from "./rawJson.js";
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -149,6 +151,31 @@ export class XmemoryAPIError extends Error {
   ) {
     super(message);
     this.name = "XmemoryAPIError";
+  }
+}
+
+/**
+ * Thrown when the server answers a write (`write` or `writeAsync`) with
+ * `VALIDATION_ERROR`. It is an {@link XmemoryAPIError}, so
+ * `instanceof XmemoryAPIError` still holds, and keeps its `name`,
+ * `"XmemoryAPIError"`, so code that tells this SDK's errors by name, as across
+ * its CommonJS and ES module builds, still does. Tell it apart by
+ * `instanceof WriteRejectedError`.
+ */
+export class WriteRejectedError extends XmemoryAPIError {
+  constructor(
+    message: string,
+    status?: number,
+    code?: string,
+    details?: Record<string, unknown> | null,
+    retryAfter?: number,
+    /**
+     * The server's structured details of the refused write when the response
+     * carries them, as a plain object; `undefined` otherwise.
+     */
+    public readonly rejection?: Record<string, unknown>,
+  ) {
+    super(message, status, code, details, retryAfter);
   }
 }
 
@@ -688,6 +715,11 @@ export interface WriteResult {
    * store as given (`unstored_field_values`).
    */
   readonly changes: WriteChanges;
+  /**
+   * The notes the server attached to the write, as it sent them; empty when it sent none. Always set on what `write`
+   * returns.
+   */
+  readonly warnings?: readonly unknown[];
 }
 
 export interface AsyncWriteResult {
@@ -696,6 +728,25 @@ export interface AsyncWriteResult {
   readonly trace_id: string | null;
   /** Deep link to this write's trace in the console; `null` if no console is configured. */
   readonly console_url: string | null;
+  /**
+   * The notes the server attached to the write, as it sent them; empty when it sent none. Always set on what
+   * `writeAsync` returns.
+   */
+  readonly warnings?: readonly unknown[];
+}
+
+/** Why a write failed, as {@link WriteStatusResult.error} reports it. */
+export interface WriteError {
+  /** The failed write's code, or `null` if the server sent none. */
+  readonly code: string | null;
+  /** The failed write's message, or `null` if the server sent none. */
+  readonly message: string | null;
+  /** The server's structured details of the failed write when it sends them, as a plain object; `undefined` otherwise. */
+  readonly rejection?: Record<string, unknown>;
+  /** The error's `details` as the server sent them, such as a quota failure's `kind`; `null` when it sent none. */
+  readonly details?: Record<string, unknown> | null;
+  /** Every other field of the error, as the server sent it, such as a quota failure's `resource_id`. */
+  readonly [field: string]: unknown;
 }
 
 export interface WriteStatusResult {
@@ -717,6 +768,16 @@ export interface WriteStatusResult {
    * `write_status` is `"completed"`.
    */
   readonly changes?: WriteChanges;
+  /**
+   * Why the write failed, when it did; `null` otherwise. `error_detail` is unchanged. Always set on what
+   * `writeStatus` returns.
+   */
+  readonly error?: WriteError | null;
+  /**
+   * The notes the server attached to the write, as it sent them; empty when it sent none. Always set on what
+   * `writeStatus` returns.
+   */
+  readonly warnings?: readonly unknown[];
 }
 
 export interface ExtractResult {
@@ -1370,24 +1431,89 @@ export interface RawApiResponse {
   readonly ids?: string[];
   readonly items?: unknown[];
   readonly errors?: ApiError[];
+  readonly warnings?: unknown[];
 }
 
 export interface InternalRequestOptions {
   body?: Record<string, unknown>;
   params?: Record<string, string | string[]>;
   timeoutMs?: number;
+  /** Give the one item the response's `warnings` when it carries none of its own (the write calls). */
+  envelopeWarnings?: boolean;
 }
 
 export type RequestOneFn = <T>(method: string, path: string, options?: InternalRequestOptions) => Promise<T>;
 export type RequestListFn = <T>(method: string, path: string, options?: InternalRequestOptions) => Promise<T[]>;
 export type RequestIdsFn = (method: string, path: string, options?: InternalRequestOptions) => Promise<string[]>;
 
+const JSON_SCHEMA_DEPRECATED = "JSON Schema input is deprecated: send an XMD schema (SchemaType.YML) instead.";
+
+/**
+ * The root keys an XMD schema has, and the server's XMD model takes no other: a document with any other root key, a
+ * JSON Schema's keywords among them, is no XMD schema.
+ */
+const XMD_ROOT_KEYS: ReadonlySet<string> = new Set(["xmd_version", "title", "description", "objects", "relations"]);
+
+/** A plain object, never an array. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Whether `objects` is shaped as XMD's object types: a mapping of mappings, at
+ * least one with `fields`. One is enough, so a schema with an object missing its
+ * `fields` reaches XMD's own error for that object.
+ */
+function isXmdObjects(objects: unknown): boolean {
+  if (!isRecord(objects)) {
+    return false;
+  }
+  const types = Object.values(objects);
+  return types.every(isRecord) && types.some((type) => Object.hasOwn(type as object, "fields"));
+}
+
+/**
+ * `schemaText` parsed, when it is an XMD schema written as JSON: a JSON object
+ * whose every root key is one an XMD schema has, with an `xmd_version` or
+ * `objects` shaped as XMD's object types. `null` otherwise.
+ */
+function xmdJsonObject(schemaText: string): Record<string, unknown> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(schemaText);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) {
+    return null;
+  }
+  const document = parsed;
+  if (!Object.keys(document).every((key) => XMD_ROOT_KEYS.has(key))) {
+    return null;
+  }
+  const objects = Object.hasOwn(document, "objects") ? document["objects"] : undefined;
+  return Object.hasOwn(document, "xmd_version") || isXmdObjects(objects) ? document : null;
+}
+
+/**
+ * The schema payload for `schemaText`. YML text goes as XMD text. An XMD schema
+ * written as JSON goes as XMD too, as the object it is, written into the request
+ * as its own text, so every value reaches the schema as JSON gave it, each number
+ * by its own token. Any other text goes as JSON Schema, which is deprecated.
+ */
 export function buildInstanceSchema(
   schemaText: string,
   schemaType: SchemaTypeValue,
 ): Record<string, unknown> {
   if (schemaType === SchemaType.YML) {
     return { yml: { value: schemaText } };
+  }
+  const xmd = xmdJsonObject(schemaText);
+  if (xmd !== null) {
+    return { yml: { value: new RawJson(schemaText, xmd) } };
+  }
+  if (typeof process !== "undefined" && typeof process.emitWarning === "function") {
+    process.emitWarning(JSON_SCHEMA_DEPRECATED, "DeprecationWarning");
   }
   return { json_schema: { value: schemaText } };
 }
