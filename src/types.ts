@@ -1444,13 +1444,49 @@ export type RequestIdsFn = (method: string, path: string, options?: InternalRequ
 
 const JSON_SCHEMA_DEPRECATED = "JSON Schema input is deprecated: send an XMD schema (SchemaType.YML) instead.";
 
-/** Keywords at the root of a JSON Schema, any of which marks a document as one, whatever else it holds. */
-const JSON_SCHEMA_ROOT_KEYWORDS = ["$schema", "$id", "type", "properties", "$defs", "definitions"] as const;
+/**
+ * Keywords at the root of a JSON Schema, any of which marks a document as one, whatever else it holds: a JSON
+ * Schema may use `objects` as an annotation of its own.
+ */
+const JSON_SCHEMA_ROOT_KEYWORDS = [
+  "$schema",
+  "$id",
+  "type",
+  "properties",
+  "$defs",
+  "definitions",
+  "allOf",
+  "anyOf",
+  "oneOf",
+  "not",
+  "$ref",
+  "if",
+  "then",
+  "else",
+] as const;
+
+/** A plain object, never an array. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Whether `objects` is shaped as XMD's object types: a mapping of mappings, at
+ * least one with `fields`. One is enough, so a schema with an object missing its
+ * `fields` reaches XMD's own error for that object.
+ */
+function isXmdObjects(objects: unknown): boolean {
+  if (!isRecord(objects)) {
+    return false;
+  }
+  const types = Object.values(objects);
+  return types.every(isRecord) && types.some((type) => Object.hasOwn(type as object, "fields"));
+}
 
 /**
  * `schemaText` parsed, when it is an XMD schema written as JSON: a JSON object
- * with a top-level `objects` key and none of JSON Schema's root keywords (a JSON
- * Schema may use `objects` as an annotation of its own). `null` otherwise.
+ * with a top-level `xmd_version`, or `objects` shaped as XMD's object types, and
+ * none of JSON Schema's root keywords. `null` otherwise.
  */
 function xmdJsonObject(schemaText: string): Record<string, unknown> | null {
   let parsed: unknown;
@@ -1459,14 +1495,15 @@ function xmdJsonObject(schemaText: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     return null;
   }
-  const document = parsed as Record<string, unknown>;
-  if (!Object.hasOwn(document, "objects") || JSON_SCHEMA_ROOT_KEYWORDS.some((key) => Object.hasOwn(document, key))) {
+  const document = parsed;
+  if (JSON_SCHEMA_ROOT_KEYWORDS.some((key) => Object.hasOwn(document, key))) {
     return null;
   }
-  return document;
+  const objects = Object.hasOwn(document, "objects") ? document["objects"] : undefined;
+  return Object.hasOwn(document, "xmd_version") || isXmdObjects(objects) ? document : null;
 }
 
 /**

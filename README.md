@@ -96,12 +96,16 @@ const schema = await xm.admin.getInstanceSchema(instanceId);
 await xm.admin.updateInstanceSchema(instanceId, newYml, SchemaType.YML);
 ```
 
-Schema text is XMD, as YAML or as JSON with the same keys: text whose top level
-is a JSON object with an `objects` key is sent as XMD by `createInstance`,
-`updateInstanceSchema` and `dryRunMigration`, whichever `SchemaType` you pass.
-Any other text passed as `SchemaType.JSON` is sent as JSON Schema, which is
-deprecated: the call emits a `DeprecationWarning` (in Node), and you should send
-an XMD schema (`SchemaType.YML`) instead.
+Schema text is XMD, as YAML or as JSON with the same keys. `createInstance`,
+`updateInstanceSchema` and `dryRunMigration` send text passed as
+`SchemaType.JSON` as XMD when its top level is a JSON object with an
+`xmd_version` key, or with `objects` whose values are objects, at least one of
+them with `fields`, and with none of JSON Schema's root keywords (`$schema`,
+`$id`, `type`, `properties`, `$defs`, `definitions`, `allOf`, `anyOf`, `oneOf`,
+`not`, `$ref`, `if`, `then`, `else`). Any other text passed as
+`SchemaType.JSON` is sent as JSON Schema, which is deprecated: the call emits a
+`DeprecationWarning` (in Node), and you should send an XMD schema
+(`SchemaType.YML`) instead.
 
 ### Generate schema
 

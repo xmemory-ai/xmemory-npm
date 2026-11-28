@@ -2882,7 +2882,19 @@ function checkClientHeader(label: string, identity: string | undefined): void {
     check("a float default reaches the schema as a number", fields?.reading.default === 1e-7);
     check("a string default reaches the schema unchanged", fields?.note.default === "a\u0085b");
 
-    // A JSON Schema may use `objects` as an annotation of its own: its root keywords keep it a JSON Schema.
+    // A JSON Schema may use `objects` as an annotation of its own: its root keywords keep it a JSON Schema, even
+    // beside object types shaped as XMD's, and so does an `objects` shaped as no XMD object types are.
+    const xmdObjects = (JSON.parse(XMD_AS_JSON) as { objects: Record<string, unknown> }).objects;
+    const composition: [string, unknown][] = [
+      ["allOf", [{ type: "object" }]],
+      ["anyOf", [{ type: "object" }]],
+      ["oneOf", [{ type: "object" }]],
+      ["not", { type: "array" }],
+      ["$ref", "#/$defs/gadget"],
+      ["if", { required: ["label"] }],
+      ["then", { required: ["label"] }],
+      ["else", { required: ["label"] }],
+    ];
     const annotated: [string, Record<string, unknown>][] = [
       [
         "`properties` beside `objects`",
@@ -2892,6 +2904,13 @@ function checkClientHeader(label: string, identity: string | undefined): void {
         "`$schema` and `type` beside `objects`",
         { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", objects: {} },
       ],
+      ...composition.map(([keyword, value]): [string, Record<string, unknown>] => [
+        `\`${keyword}\` beside object types shaped as XMD's`,
+        { [keyword]: value, objects: xmdObjects },
+      ]),
+      ["`objects` holding no object types", { objects: { source: "CRM" } }],
+      ["`objects` whose types have no `fields`", { objects: { Gadget: { label: "an object without fields" } } }],
+      ["an empty `objects`", { objects: {} }],
     ];
     for (const [label, document] of annotated) {
       const text = JSON.stringify(document);
@@ -2901,6 +2920,22 @@ function checkClientHeader(label: string, identity: string | undefined): void {
         (await sent((c) => c.admin.createInstance("c", "n", text, SchemaType.JSON))) === asJsonSchema(text),
       );
       check(`a JSON Schema with ${label} warns once`, emitted.length === 1);
+    }
+
+    // An `xmd_version` signs XMD, and so does one object type with `fields`: an object still missing its `fields`
+    // gets XMD's own error for that object, not the JSON Schema converter's.
+    const signed: [string, Record<string, unknown>][] = [
+      ["`xmd_version`", { xmd_version: "v1", objects: {} }],
+      ["one object type with `fields`", { objects: { ...xmdObjects, Widget: { description: "Fields to come." } } }],
+    ];
+    for (const [label, document] of signed) {
+      const text = JSON.stringify(document);
+      emitted.length = 0;
+      check(
+        `XMD signed by ${label} is sent as XMD, as the parsed object`,
+        (await sent((c) => c.admin.createInstance("c", "n", text, SchemaType.JSON))) === asXmdObject(text),
+      );
+      check(`XMD signed by ${label} warns nothing`, emitted.length === 0);
     }
 
     emitted.length = 0;
