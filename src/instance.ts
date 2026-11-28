@@ -25,6 +25,7 @@ import type {
   ToolParameterDescription,
   WriteMutation,
   WriteOptions,
+  WriteError,
   WriteResult,
   WriteStatusResult,
   RelatedTypes,
@@ -100,10 +101,9 @@ function buildWriteBody(
     // to the wire.
     return { structured_mutations: input };
   }
-  const body: Record<string, unknown> = {
-    text: input,
-    extraction_logic: options?.extractionLogic ?? "fast",
-  };
+  const body: Record<string, unknown> = { text: input };
+  // Sent only when the caller gives one.
+  if (options?.extractionLogic != null) body.extraction_logic = options.extractionLogic;
   if (options?.diffEngine != null) body.use_diff_engine = options.diffEngine;
   if (options?.scope != null) {
     const scope: Record<string, unknown> = { objects: serializeScopeObjects(options.scope.objects) };
@@ -298,6 +298,31 @@ function own(result: object, key: string): unknown {
   return Object.hasOwn(result, key) ? (result as Record<string, unknown>)[key] : undefined;
 }
 
+/** A plain object, never an array. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A failed write's `error` as the status gives it: its code and message, and
+ * `details.rejection` as its `rejection` when that is an object; `null` when
+ * the status carries none.
+ */
+function writeError(error: unknown): WriteError | null {
+  if (!isRecord(error)) {
+    return null;
+  }
+  const code = own(error, "code");
+  const message = own(error, "message");
+  const details = own(error, "details");
+  const rejection = isRecord(details) ? own(details, "rejection") : undefined;
+  return {
+    code: typeof code === "string" ? code : null,
+    message: typeof message === "string" ? message : null,
+    ...(isRecord(rejection) ? { rejection } : {}),
+  };
+}
+
 function withConsoleUrl<T extends { console_url?: string | null }>(result: T): T & { console_url: string | null } {
   const url = own(result, "console_url");
   return { ...result, console_url: typeof url === "string" ? url : null };
@@ -410,7 +435,7 @@ export class InstanceHandle {
       await this._requestOne<Omit<WriteResult, "console_url"> & { console_url?: string | null }>(
         "POST",
         `/instances/${this.id}/write`,
-        { body: buildWriteBody(input, options), timeoutMs: options?.timeoutMs },
+        { body: buildWriteBody(input, options), timeoutMs: options?.timeoutMs, envelopeWarnings: true },
       ),
     );
   }
@@ -437,6 +462,7 @@ export class InstanceHandle {
     }>("POST", `/instances/${this.id}/write_async`, {
       body: buildWriteBody(input, options),
       timeoutMs: options?.timeoutMs,
+      envelopeWarnings: true,
     });
     // `trace_id` is normalized here as well because this result declares it for the
     // first time, and the wire omits it exactly as it omits the console link.
@@ -451,20 +477,21 @@ export class InstanceHandle {
    * finished carries none.
    */
   async writeStatus(writeId: string, options?: RequestOptions): Promise<WriteStatusResult> {
-    return withConsoleUrl(
-      await this._requestOne<Omit<WriteStatusResult, "console_url"> & { console_url?: string | null }>(
-        "POST",
-        `/instances/${this.id}/write_status`,
-        { body: { write_id: writeId }, timeoutMs: options?.timeoutMs },
-      ),
-    );
+    const result = await this._requestOne<
+      Omit<WriteStatusResult, "console_url" | "error" | "warnings"> & { console_url?: string | null }
+    >("POST", `/instances/${this.id}/write_status`, { body: { write_id: writeId }, timeoutMs: options?.timeoutMs });
+    const warnings = own(result, "warnings");
+    return withConsoleUrl({
+      ...result,
+      error: writeError(own(result, "error")),
+      warnings: Array.isArray(warnings) ? warnings : [],
+    });
   }
 
   async extract(text: string, options?: ExtractOptions): Promise<ExtractResult> {
-    const body: Record<string, unknown> = {
-      text,
-      extraction_logic: options?.extractionLogic ?? "fast",
-    };
+    const body: Record<string, unknown> = { text };
+    // Sent only when the caller gives one.
+    if (options?.extractionLogic != null) body.extraction_logic = options.extractionLogic;
     return withConsoleUrl(
       await this._requestOne<Omit<ExtractResult, "console_url"> & { console_url?: string | null }>(
         "POST",

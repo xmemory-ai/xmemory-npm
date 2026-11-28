@@ -2,6 +2,36 @@
 
 All notable changes to the `xmemory` npm package are documented here.
 
+## 3.26.0
+
+Schema text sent as XMD when it is XMD, and typed write refusals.
+
+### Added
+
+- `WriteRejectedError`, a subclass of `XmemoryAPIError`, thrown by `write` and
+  `writeAsync` when the server answers with `VALIDATION_ERROR`. Its `rejection` holds the server's structured details of
+  the refused write when the response carries them, as a plain object, and is
+  `undefined` otherwise.
+- `warnings` on `WriteResult`, `AsyncWriteResult` and `WriteStatusResult`: the
+  notes the server attached to the write, empty when it sent none.
+- `WriteStatusResult.error`, a `WriteError`: a failed write's `code` and
+  `message`, and in `rejection` the server's details when it sends them.
+  `null` while the write has not failed; `error_detail` is unchanged.
+
+### Changed
+
+- An XMD schema written as JSON (a JSON object with a top-level `objects` key)
+  is sent as XMD by `createInstance`, `updateInstanceSchema` and
+  `dryRunMigration`, whichever `SchemaType` names it.
+- `write`, `writeAsync` and `extract` send `extraction_logic` only when you pass
+  `extractionLogic`, where they sent `"fast"` by default before.
+
+### Deprecated
+
+- JSON Schema input: any other text passed as `SchemaType.JSON` is still sent as
+  JSON Schema, and the call emits a `DeprecationWarning` in Node. Send an XMD
+  schema (`SchemaType.YML`) instead.
+
 ## 3.25.1
 
 Wording only. No change to the library's code or types.
