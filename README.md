@@ -98,11 +98,10 @@ await xm.admin.updateInstanceSchema(instanceId, newYml, SchemaType.YML);
 
 Schema text is XMD, as YAML or as JSON with the same keys. `createInstance`,
 `updateInstanceSchema` and `dryRunMigration` send text passed as
-`SchemaType.JSON` as XMD when its top level is a JSON object with an
-`xmd_version` key, or with `objects` whose values are objects, at least one of
-them with `fields`, and with none of JSON Schema's root keywords (`$schema`,
-`$id`, `type`, `properties`, `$defs`, `definitions`, `allOf`, `anyOf`, `oneOf`,
-`not`, `$ref`, `if`, `then`, `else`). That text goes into the request as it
+`SchemaType.JSON` as XMD when its top level is a JSON object whose every key
+is one an XMD schema has (`xmd_version`, `title`, `description`, `objects`,
+`relations`), with an `xmd_version` key or with `objects` whose values are
+objects, at least one of them with `fields`. That text goes into the request as it
 is, so every value reaches the schema as JSON gave it, each number by its own
 token: `1.0` stays a float, and an integer past 2^53 stays exact. Text passed as
 `SchemaType.YML` is sent unchanged, for the server to read as YAML, which

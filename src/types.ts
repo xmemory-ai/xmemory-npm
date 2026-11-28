@@ -1449,25 +1449,10 @@ export type RequestIdsFn = (method: string, path: string, options?: InternalRequ
 const JSON_SCHEMA_DEPRECATED = "JSON Schema input is deprecated: send an XMD schema (SchemaType.YML) instead.";
 
 /**
- * Keywords at the root of a JSON Schema, any of which marks a document as one, whatever else it holds: a JSON
- * Schema may use `objects` as an annotation of its own.
+ * The root keys an XMD schema has, and the server's XMD model takes no other: a document with any other root key, a
+ * JSON Schema's keywords among them, is no XMD schema.
  */
-const JSON_SCHEMA_ROOT_KEYWORDS = [
-  "$schema",
-  "$id",
-  "type",
-  "properties",
-  "$defs",
-  "definitions",
-  "allOf",
-  "anyOf",
-  "oneOf",
-  "not",
-  "$ref",
-  "if",
-  "then",
-  "else",
-] as const;
+const XMD_ROOT_KEYS: ReadonlySet<string> = new Set(["xmd_version", "title", "description", "objects", "relations"]);
 
 /** A plain object, never an array. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1489,8 +1474,8 @@ function isXmdObjects(objects: unknown): boolean {
 
 /**
  * `schemaText` parsed, when it is an XMD schema written as JSON: a JSON object
- * with a top-level `xmd_version`, or `objects` shaped as XMD's object types, and
- * none of JSON Schema's root keywords. `null` otherwise.
+ * whose every root key is one an XMD schema has, with an `xmd_version` or
+ * `objects` shaped as XMD's object types. `null` otherwise.
  */
 function xmdJsonObject(schemaText: string): Record<string, unknown> | null {
   let parsed: unknown;
@@ -1503,7 +1488,7 @@ function xmdJsonObject(schemaText: string): Record<string, unknown> | null {
     return null;
   }
   const document = parsed;
-  if (JSON_SCHEMA_ROOT_KEYWORDS.some((key) => Object.hasOwn(document, key))) {
+  if (!Object.keys(document).every((key) => XMD_ROOT_KEYS.has(key))) {
     return null;
   }
   const objects = Object.hasOwn(document, "objects") ? document["objects"] : undefined;

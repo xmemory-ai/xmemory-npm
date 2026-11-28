@@ -27,6 +27,7 @@ import {
   type WriteStatusResult,
   type WriteOptions,
   type RequestOptions,
+  type WriteError,
 } from "./src/index.js";
 import { CLIENT_HEADER, buildClientIdentity, withClientHeader } from "./src/client.js";
 import { VERSION } from "./src/version.js";
@@ -2920,6 +2921,7 @@ function checkClientHeader(label: string, identity: string | undefined): void {
       ["if", { required: ["label"] }],
       ["then", { required: ["label"] }],
       ["else", { required: ["label"] }],
+      ["patternProperties", { "^customer_": { type: "object", properties: { email: { type: "string" } } } }],
     ];
     const annotated: [string, Record<string, unknown>][] = [
       [
@@ -2938,6 +2940,7 @@ function checkClientHeader(label: string, identity: string | undefined): void {
       ["`objects` whose types have no `fields`", { objects: { Gadget: { label: "an object without fields" } } }],
       ["an empty `objects`", { objects: {} }],
       ["neither `objects` nor a keyword", { title: "Gadget" }],
+      ["`objects` mixing an object type and a string", { objects: { ...xmdObjects, source: "CRM" } }],
     ];
     for (const [label, document] of annotated) {
       const text = JSON.stringify(document);
@@ -3189,12 +3192,47 @@ function checkClientHeader(label: string, identity: string | undefined): void {
   check("a default writeAsync sends no extraction_logic", !("extraction_logic" in queued));
   const extracted = await sentOf((c) => c.instance("i").extract("A teal gadget."));
   check("a default extract sends no extraction_logic", !("extraction_logic" in extracted));
-  const deep = await sentOf((c) => c.instance("i").write("A teal gadget.", { extractionLogic: "deep" }));
-  check("a write sends the extraction_logic it is given", deep.extraction_logic === "deep");
-  const queuedDeep = await sentOf((c) => c.instance("i").writeAsync("A teal gadget.", { extractionLogic: "deep" }));
-  check("a writeAsync sends the extraction_logic it is given", queuedDeep.extraction_logic === "deep");
-  const deepExtract = await sentOf((c) => c.instance("i").extract("A teal gadget.", { extractionLogic: "deep" }));
-  check("an extract sends the extraction_logic it is given", deepExtract.extraction_logic === "deep");
+  // Each call sends the extraction_logic it is given, either literal, as it is: a "fast" sent is what a server warns on.
+  for (const given of ["deep", "fast"] as const) {
+    const options = { extractionLogic: given };
+    const written = await sentOf((c) => c.instance("i").write("A teal gadget.", options));
+    check(`a write sends the extraction_logic "${given}" it is given`, written.extraction_logic === given);
+    const queuedGiven = await sentOf((c) => c.instance("i").writeAsync("A teal gadget.", options));
+    check(`a writeAsync sends the extraction_logic "${given}" it is given`, queuedGiven.extraction_logic === given);
+    const extractedGiven = await sentOf((c) => c.instance("i").extract("A teal gadget.", options));
+    check(`an extract sends the extraction_logic "${given}" it is given`, extractedGiven.extraction_logic === given);
+  }
+}
+
+{
+  // A body with no schema is JSON.stringify's, each field read once: a getter in a structured write's values is read
+  // once, as before, and its value sent.
+  let reads = 0;
+  const values = {
+    get name(): string {
+      reads += 1;
+      return "Alice";
+    },
+  };
+  const mutations: WriteMutation[] = [
+    { object_mutation: { object_type: "person", create: { key: { email: "a@x.io" }, values } } },
+  ];
+  const { body } = await captureRequest((c) => c.instance("i").write(mutations), { write_id: "w-1" });
+  const sentMutations = body.structured_mutations as { object_mutation: { create: { values: { name: string } } } }[];
+  check("a structured write reads a value's getter once", reads === 1);
+  check("a structured write sends the getter's value", sentMutations[0]?.object_mutation.create.values.name === "Alice");
+
+  // The schema's text goes at instance_schema's own place, so no field of the body can take it: a name that reads like
+  // the placeholder an earlier draft used stays the name.
+  const lookalike = "\u0000raw-json-0\u0000";
+  const schemaText = '{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}}}}}';
+  const created = await captureRequest((c) => c.admin.createInstance("c", lookalike, schemaText, SchemaType.JSON));
+  check("a name that reads like a placeholder stays the name", created.body.name === lookalike);
+  check("the schema keeps its own place beside such a name", created.raw.includes('"value":{"objects": {"Gauge"'));
+
+  // `details` takes the null the server sends for a failed write with none.
+  const noDetails: WriteError["details"] = null;
+  check("a WriteError's details can be null", noDetails === null);
 }
 
 // ---------------------------------------------------------------------------

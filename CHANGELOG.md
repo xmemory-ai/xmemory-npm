@@ -21,11 +21,10 @@ Schema text sent as XMD when it is XMD, and typed write refusals.
 
 ### Changed
 
-- An XMD schema written as JSON (a JSON object with a top-level `xmd_version`
-  key, or with `objects` whose values are objects, at least one of them with
-  `fields`, and with none of JSON Schema's root keywords: `$schema`, `$id`,
-  `type`, `properties`, `$defs`, `definitions`, `allOf`, `anyOf`, `oneOf`,
-  `not`, `$ref`, `if`, `then`, `else`) passed as `SchemaType.JSON` is sent as
+- An XMD schema written as JSON (a JSON object whose every top-level key is
+  one an XMD schema has: `xmd_version`, `title`, `description`, `objects`,
+  `relations`, with an `xmd_version` key or with `objects` whose values are
+  objects, at least one of them with `fields`) passed as `SchemaType.JSON` is sent as
   XMD by `createInstance`, `updateInstanceSchema` and `dryRunMigration`, as the
   object it is, its text written into the request as it is, so every value
   reaches the schema as JSON gave it, each number by its own token. Text passed

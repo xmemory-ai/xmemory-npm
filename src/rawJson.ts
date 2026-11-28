@@ -14,19 +14,25 @@ export class RawJson {
   }
 }
 
-/** `body` as JSON, each {@link RawJson} in it written as its own text. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * `body` as JSON. A body whose `instance_schema` carries XMD written as JSON (`{ yml: { value: RawJson } }`) is
+ * written with that schema's own text at `instance_schema`'s place, after the body's other fields; every other body
+ * is `JSON.stringify`'s, each of its fields read once, as it always was.
+ */
 export function serializeBody(body: unknown): string {
-  const texts: string[] = [];
-  // A string no JSON text holds unescaped, written in each RawJson's place and then replaced by its text.
-  const placeholder = (index: number) => `\u0000raw-json-${index}\u0000`;
-  const serialized = JSON.stringify(body, function (this: Record<string, unknown>, key: string, value: unknown) {
-    // `this[key]` is the value before its `toJSON` ran, so a RawJson is seen here and not its parsed value.
-    const original = this[key];
-    if (original instanceof RawJson) {
-      texts.push(original.text.trim());
-      return placeholder(texts.length - 1);
-    }
-    return value;
-  });
-  return texts.reduce((written, text, index) => written.replace(JSON.stringify(placeholder(index)), () => text), serialized);
+  const schema = isRecord(body) && Object.hasOwn(body, "instance_schema") ? body["instance_schema"] : undefined;
+  const yml = isRecord(schema) && Object.hasOwn(schema, "yml") ? schema["yml"] : undefined;
+  const value = isRecord(yml) && Object.hasOwn(yml, "value") ? yml["value"] : undefined;
+  if (!isRecord(body) || !(value instanceof RawJson)) {
+    return JSON.stringify(body);
+  }
+  const rest: Record<string, unknown> = { ...body };
+  delete rest["instance_schema"];
+  const written = `{"yml":{"value":${value.text.trim()}}}`;
+  const head = JSON.stringify(rest);
+  return head === "{}" ? `{"instance_schema":${written}}` : `${head.slice(0, -1)},"instance_schema":${written}}`;
 }
