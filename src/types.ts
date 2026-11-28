@@ -711,8 +711,11 @@ export interface WriteResult {
    * store as given (`unstored_field_values`).
    */
   readonly changes: WriteChanges;
-  /** The notes the server attached to the write, as it sent them; empty when it sent none. */
-  readonly warnings: readonly unknown[];
+  /**
+   * The notes the server attached to the write, as it sent them; empty when it sent none. Always set on what `write`
+   * returns.
+   */
+  readonly warnings?: readonly unknown[];
 }
 
 export interface AsyncWriteResult {
@@ -721,8 +724,11 @@ export interface AsyncWriteResult {
   readonly trace_id: string | null;
   /** Deep link to this write's trace in the console; `null` if no console is configured. */
   readonly console_url: string | null;
-  /** The notes the server attached to the write, as it sent them; empty when it sent none. */
-  readonly warnings: readonly unknown[];
+  /**
+   * The notes the server attached to the write, as it sent them; empty when it sent none. Always set on what
+   * `writeAsync` returns.
+   */
+  readonly warnings?: readonly unknown[];
 }
 
 /** Why a write failed, as {@link WriteStatusResult.error} reports it. */
@@ -733,6 +739,10 @@ export interface WriteError {
   readonly message: string | null;
   /** The server's structured details of the failed write when it sends them, as a plain object; `undefined` otherwise. */
   readonly rejection?: Record<string, unknown>;
+  /** The error's `details` as the server sent them, such as a quota failure's `kind`. */
+  readonly details?: Record<string, unknown>;
+  /** Every other field of the error, as the server sent it, such as a quota failure's `resource_id`. */
+  readonly [field: string]: unknown;
 }
 
 export interface WriteStatusResult {
@@ -754,10 +764,16 @@ export interface WriteStatusResult {
    * `write_status` is `"completed"`.
    */
   readonly changes?: WriteChanges;
-  /** Why the write failed, when it did; `null` otherwise. `error_detail` is unchanged. */
-  readonly error: WriteError | null;
-  /** The notes the server attached to the write, as it sent them; empty when it sent none. */
-  readonly warnings: readonly unknown[];
+  /**
+   * Why the write failed, when it did; `null` otherwise. `error_detail` is unchanged. Always set on what
+   * `writeStatus` returns.
+   */
+  readonly error?: WriteError | null;
+  /**
+   * The notes the server attached to the write, as it sent them; empty when it sent none. Always set on what
+   * `writeStatus` returns.
+   */
+  readonly warnings?: readonly unknown[];
 }
 
 export interface ExtractResult {
@@ -1428,27 +1444,47 @@ export type RequestIdsFn = (method: string, path: string, options?: InternalRequ
 
 const JSON_SCHEMA_DEPRECATED = "JSON Schema input is deprecated: send an XMD schema (SchemaType.YML) instead.";
 
-/** Whether `schemaText` is an XMD schema written as JSON: a JSON object with a top-level `objects` key. */
-function isXmdJson(schemaText: string): boolean {
+/** Keywords at the root of a JSON Schema, any of which marks a document as one, whatever else it holds. */
+const JSON_SCHEMA_ROOT_KEYWORDS = ["$schema", "$id", "type", "properties", "$defs", "definitions"] as const;
+
+/**
+ * `schemaText` parsed, when it is an XMD schema written as JSON: a JSON object
+ * with a top-level `objects` key and none of JSON Schema's root keywords (a JSON
+ * Schema may use `objects` as an annotation of its own). `null` otherwise.
+ */
+function xmdJsonObject(schemaText: string): Record<string, unknown> | null {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(schemaText);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) && Object.hasOwn(parsed, "objects");
+    parsed = JSON.parse(schemaText);
   } catch {
-    return false;
+    return null;
   }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+  const document = parsed as Record<string, unknown>;
+  if (!Object.hasOwn(document, "objects") || JSON_SCHEMA_ROOT_KEYWORDS.some((key) => Object.hasOwn(document, key))) {
+    return null;
+  }
+  return document;
 }
 
 /**
- * The schema payload for `schemaText`. YML text, and an XMD schema written as
- * JSON whichever `schemaType` names it (JSON is valid YAML), go as XMD. Any
- * other text goes as JSON Schema, which is deprecated.
+ * The schema payload for `schemaText`. YML text goes as XMD text. An XMD schema
+ * written as JSON goes as XMD too, as the parsed object, so every value reaches
+ * the schema as JSON gave it. Any other text goes as JSON Schema, which is
+ * deprecated.
  */
 export function buildInstanceSchema(
   schemaText: string,
   schemaType: SchemaTypeValue,
 ): Record<string, unknown> {
-  if (schemaType === SchemaType.YML || isXmdJson(schemaText)) {
+  if (schemaType === SchemaType.YML) {
     return { yml: { value: schemaText } };
+  }
+  const xmd = xmdJsonObject(schemaText);
+  if (xmd !== null) {
+    return { yml: { value: xmd } };
   }
   if (typeof process !== "undefined" && typeof process.emitWarning === "function") {
     process.emitWarning(JSON_SCHEMA_DEPRECATED, "DeprecationWarning");

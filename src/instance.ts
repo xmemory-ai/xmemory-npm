@@ -298,6 +298,12 @@ function own(result: object, key: string): unknown {
   return Object.hasOwn(result, key) ? (result as Record<string, unknown>)[key] : undefined;
 }
 
+/** A write's result as this client returns it: its `warnings` always set. */
+type Delivered<T extends { readonly warnings?: readonly unknown[] }> = T & { readonly warnings: readonly unknown[] };
+
+/** A write's status as this client returns it: its `error` and `warnings` always set. */
+type DeliveredStatus = Delivered<WriteStatusResult> & { readonly error: WriteError | null };
+
 /** A plain object, never an array. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -317,6 +323,7 @@ function writeError(error: unknown): WriteError | null {
   const details = own(error, "details");
   const rejection = isRecord(details) ? own(details, "rejection") : undefined;
   return {
+    ...error,
     code: typeof code === "string" ? code : null,
     message: typeof message === "string" ? message : null,
     ...(isRecord(rejection) ? { rejection } : {}),
@@ -428,11 +435,11 @@ export class InstanceHandle {
    * applied one at a time, in the order they were queued; this call resolves
    * once its own write is applied, after every write queued before it.
    */
-  async write(text: string, options?: WriteOptions): Promise<WriteResult>;
-  async write(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<WriteResult>;
-  async write(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<WriteResult> {
+  async write(text: string, options?: WriteOptions): Promise<Delivered<WriteResult>>;
+  async write(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<Delivered<WriteResult>>;
+  async write(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<Delivered<WriteResult>> {
     return withConsoleUrl(
-      await this._requestOne<Omit<WriteResult, "console_url"> & { console_url?: string | null }>(
+      await this._requestOne<Omit<Delivered<WriteResult>, "console_url"> & { console_url?: string | null }>(
         "POST",
         `/instances/${this.id}/write`,
         { body: buildWriteBody(input, options), timeoutMs: options?.timeoutMs, envelopeWarnings: true },
@@ -453,10 +460,13 @@ export class InstanceHandle {
    * order the server receives them, so await this call before sending a write
    * that must apply after it.
    */
-  async writeAsync(text: string, options?: WriteOptions): Promise<AsyncWriteResult>;
-  async writeAsync(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<AsyncWriteResult>;
-  async writeAsync(input: string | readonly WriteMutation[], options?: WriteOptions): Promise<AsyncWriteResult> {
-    const result = await this._requestOne<Omit<AsyncWriteResult, "trace_id" | "console_url"> & {
+  async writeAsync(text: string, options?: WriteOptions): Promise<Delivered<AsyncWriteResult>>;
+  async writeAsync(mutations: readonly WriteMutation[], options?: RequestOptions): Promise<Delivered<AsyncWriteResult>>;
+  async writeAsync(
+    input: string | readonly WriteMutation[],
+    options?: WriteOptions,
+  ): Promise<Delivered<AsyncWriteResult>> {
+    const result = await this._requestOne<Omit<Delivered<AsyncWriteResult>, "trace_id" | "console_url"> & {
       trace_id?: string | null;
       console_url?: string | null;
     }>("POST", `/instances/${this.id}/write_async`, {
@@ -476,7 +486,7 @@ export class InstanceHandle {
    * and what a field merge chose between; a status for a write that has not
    * finished carries none.
    */
-  async writeStatus(writeId: string, options?: RequestOptions): Promise<WriteStatusResult> {
+  async writeStatus(writeId: string, options?: RequestOptions): Promise<DeliveredStatus> {
     const result = await this._requestOne<
       Omit<WriteStatusResult, "console_url" | "error" | "warnings"> & { console_url?: string | null }
     >("POST", `/instances/${this.id}/write_status`, { body: { write_id: writeId }, timeoutMs: options?.timeoutMs });

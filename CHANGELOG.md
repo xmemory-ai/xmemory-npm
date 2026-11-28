@@ -20,9 +20,18 @@ Schema text sent as XMD when it is XMD, and typed write refusals.
 
 ### Changed
 
-- An XMD schema written as JSON (a JSON object with a top-level `objects` key)
-  is sent as XMD by `createInstance`, `updateInstanceSchema` and
-  `dryRunMigration`, whichever `SchemaType` names it.
+- An XMD schema written as JSON (a JSON object with a top-level `objects` key
+  and none of JSON Schema's root keywords: `$schema`, `$id`, `type`,
+  `properties`, `$defs`, `definitions`) passed as `SchemaType.JSON` is sent as
+  XMD by `createInstance`, `updateInstanceSchema` and `dryRunMigration`, as the
+  parsed object, so every value reaches the schema as JSON gave it. Text passed
+  as `SchemaType.YML` is sent as YML text, as before.
+- `WriteResult.warnings`, `AsyncWriteResult.warnings`, `WriteStatusResult.error`
+  and `WriteStatusResult.warnings` are optional in the types, so values typed
+  against earlier versions still compile; `write`, `writeAsync` and
+  `writeStatus` always set them.
+- A failed `writeStatus`'s `error` keeps every field the server sent, such as a
+  quota failure's `details.kind` and `resource_id`, beside its `rejection`.
 - `write`, `writeAsync` and `extract` send `extraction_logic` only when you pass
   `extractionLogic`, where they sent `"fast"` by default before.
 

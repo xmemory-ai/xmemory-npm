@@ -217,9 +217,9 @@ Every data operation — `read`, `write`, `writeAsync`, `writeStatus`, `extract`
 `console_url`, the deep link to that call's trace. It is per operation rather than per
 record, and `null` when the server has no console configured.
 
-Options: `{ extractionLogic?, scope?, timeoutMs? }` — `extractionLogic` is sent
-only when you pass one, and a write whose `extractionLogic` the server does not run
-says so in its `warnings`; see [Scoped writes](#scoped-writes) for `scope` and its `mode`.
+Options: `{ extractionLogic?, scope?, timeoutMs? }`. Every write uses deep
+extraction; a write sent `extractionLogic: "fast"` notes this in its `warnings`.
+See [Scoped writes](#scoped-writes) for `scope` and its `mode`.
 
 Or pass a `WriteMutation[]` for **structured writes** — deterministic, LLM-free
 create/update/delete mutations applied in array order (later mutations may

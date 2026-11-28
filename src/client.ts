@@ -71,7 +71,7 @@ function ownArray(source: unknown, key: string): unknown[] {
 
 /**
  * The write calls, whose `VALIDATION_ERROR` throws {@link WriteRejectedError}. Not `write_status`: it answers
- * `VALIDATION_ERROR` for a write id it does not know, and reports a failed write in the status's `error`.
+ * `VALIDATION_ERROR` for a malformed write id, and reports a failed write in the status's `error`.
  */
 const WRITE_PATH = /\/write(?:_async)?$/;
 
