@@ -2,6 +2,8 @@
  * Types, enums, and error classes for the xmemory API.
  */
 
+import { RawJson } from "./rawJson.js";
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -155,7 +157,10 @@ export class XmemoryAPIError extends Error {
 /**
  * Thrown when the server answers a write (`write` or `writeAsync`) with
  * `VALIDATION_ERROR`. It is an {@link XmemoryAPIError}, so
- * `instanceof XmemoryAPIError` still holds.
+ * `instanceof XmemoryAPIError` still holds, and keeps its `name`,
+ * `"XmemoryAPIError"`, so code that tells this SDK's errors by name, as across
+ * its CommonJS and ES module builds, still does. Tell it apart by
+ * `instanceof WriteRejectedError`.
  */
 export class WriteRejectedError extends XmemoryAPIError {
   constructor(
@@ -171,7 +176,6 @@ export class WriteRejectedError extends XmemoryAPIError {
     public readonly rejection?: Record<string, unknown>,
   ) {
     super(message, status, code, details, retryAfter);
-    this.name = "WriteRejectedError";
   }
 }
 
@@ -739,8 +743,8 @@ export interface WriteError {
   readonly message: string | null;
   /** The server's structured details of the failed write when it sends them, as a plain object; `undefined` otherwise. */
   readonly rejection?: Record<string, unknown>;
-  /** The error's `details` as the server sent them, such as a quota failure's `kind`. */
-  readonly details?: Record<string, unknown>;
+  /** The error's `details` as the server sent them, such as a quota failure's `kind`; `null` when it sent none. */
+  readonly details?: Record<string, unknown> | null;
   /** Every other field of the error, as the server sent it, such as a quota failure's `resource_id`. */
   readonly [field: string]: unknown;
 }
@@ -1508,9 +1512,9 @@ function xmdJsonObject(schemaText: string): Record<string, unknown> | null {
 
 /**
  * The schema payload for `schemaText`. YML text goes as XMD text. An XMD schema
- * written as JSON goes as XMD too, as the parsed object, so every value reaches
- * the schema as JSON gave it. Any other text goes as JSON Schema, which is
- * deprecated.
+ * written as JSON goes as XMD too, as the object it is, written into the request
+ * as its own text, so every value reaches the schema as JSON gave it, each number
+ * by its own token. Any other text goes as JSON Schema, which is deprecated.
  */
 export function buildInstanceSchema(
   schemaText: string,
@@ -1521,7 +1525,7 @@ export function buildInstanceSchema(
   }
   const xmd = xmdJsonObject(schemaText);
   if (xmd !== null) {
-    return { yml: { value: xmd } };
+    return { yml: { value: new RawJson(schemaText, xmd) } };
   }
   if (typeof process !== "undefined" && typeof process.emitWarning === "function") {
     process.emitWarning(JSON_SCHEMA_DEPRECATED, "DeprecationWarning");

@@ -3,6 +3,7 @@
  */
 
 import { InstanceHandle } from "./instance.js";
+import { serializeBody } from "./rawJson.js";
 import {
   type AgentSetupResult,
   type ApiError,
@@ -451,7 +452,7 @@ export class XmemoryClient {
     const hasBody = !!(options?.body && method !== "GET");
     const init: FetchInit = { method, headers: this._headers(hasBody) };
     if (hasBody) {
-      init.body = JSON.stringify(options!.body);
+      init.body = serializeBody(options!.body);
     }
 
     const res = await this._fetch(url, init, timeoutMs);

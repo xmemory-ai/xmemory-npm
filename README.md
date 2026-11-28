@@ -102,10 +102,14 @@ Schema text is XMD, as YAML or as JSON with the same keys. `createInstance`,
 `xmd_version` key, or with `objects` whose values are objects, at least one of
 them with `fields`, and with none of JSON Schema's root keywords (`$schema`,
 `$id`, `type`, `properties`, `$defs`, `definitions`, `allOf`, `anyOf`, `oneOf`,
-`not`, `$ref`, `if`, `then`, `else`). Any other text passed as
-`SchemaType.JSON` is sent as JSON Schema, which is deprecated: the call emits a
-`DeprecationWarning` (in Node), and you should send an XMD schema
-(`SchemaType.YML`) instead.
+`not`, `$ref`, `if`, `then`, `else`). That text goes into the request as it
+is, so every value reaches the schema as JSON gave it, each number by its own
+token: `1.0` stays a float, and an integer past 2^53 stays exact. Text passed as
+`SchemaType.YML` is sent unchanged, for the server to read as YAML, which
+refuses JSON indented with tabs: pass XMD written as JSON as `SchemaType.JSON`.
+Any other text passed as `SchemaType.JSON` is sent as JSON Schema, which is
+deprecated: the call emits a `DeprecationWarning` (in Node), and you should send
+an XMD schema instead.
 
 ### Generate schema
 
@@ -221,8 +225,9 @@ Every data operation — `read`, `write`, `writeAsync`, `writeStatus`, `extract`
 `console_url`, the deep link to that call's trace. It is per operation rather than per
 record, and `null` when the server has no console configured.
 
-Options: `{ extractionLogic?, scope?, timeoutMs? }`. Every write uses deep
-extraction; a write sent `extractionLogic: "fast"` notes this in its `warnings`.
+Options: `{ extractionLogic?, scope?, timeoutMs? }`. Every text write uses deep
+extraction; one sent `extractionLogic: "fast"` notes this in its `warnings`. A
+structured write, below, does no extraction.
 See [Scoped writes](#scoped-writes) for `scope` and its `mode`.
 
 Or pass a `WriteMutation[]` for **structured writes** — deterministic, LLM-free
@@ -319,7 +324,8 @@ A status for a write that has not finished carries none, so the field is optiona
 A failed write's status carries `error`, a `WriteError`: its `code` and
 `message` are the failed write's, and its `rejection` holds the server's
 details when it sends them (`undefined` otherwise). `error` is `null` while the
-write has not failed; `error_detail` is unchanged.
+write has not failed, and can be `null` on a failed write the server stored no
+code for: read `error_detail` then, which is unchanged.
 
 ### Warnings on a write
 
@@ -998,7 +1004,9 @@ through, counted as a generic caller.
 
 All errors throw `XmemoryAPIError`. Health check failures throw `XmemoryHealthCheckError` (a subclass).
 A write the server answers with `VALIDATION_ERROR` throws `WriteRejectedError`
-(a subclass too) from `write` and `writeAsync`. Its `rejection`
+(a subclass too) from `write` and `writeAsync`. It keeps `XmemoryAPIError`'s
+`name`, so code that tells this SDK's errors by name still does: tell it apart by
+`instanceof WriteRejectedError`. Its `rejection`
 holds the server's structured details of the refused write when the response
 carries them, as a plain object, and is `undefined` otherwise:
 
